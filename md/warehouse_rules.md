@@ -8,7 +8,9 @@ The goal is to make each warehouse behave like a small, consistent inventory sys
 
 ## 1. Inventory Consistency
 
-Each inventory record must satisfy:
+Each warehouse may contain many independent inventory records. All inventory constraints are enforced independently for every SKU.
+
+Each SKU's inventory record must satisfy:
 
 ```text
 available = on_hand - reserved
@@ -28,7 +30,7 @@ Rules:
 
 Every inventory record contains a logical `version`.
 
-This version is shared across warehouse systems for the same SKU and represents the logical inventory revision, not a local per-warehouse write counter.
+Each SKU has its own shared logical inventory revision stream. Its version is shared across warehouse systems for that same SKU and represents the logical inventory revision, not a local per-warehouse write counter.
 
 Example:
 
@@ -37,9 +39,23 @@ Revision 41 = 100 units
 Revision 42 = 120 units
 ```
 
-A warehouse that has applied revision 42 reports version 42.
+A warehouse that has applied revision 42 for the relevant SKU reports version 42 for that SKU.
 
-A warehouse still reporting version 41 is behind.
+A warehouse still reporting version 41 for the same SKU is behind.
+
+```text
+SKU-001
+A: v42
+B: v41
+C: v42
+
+SKU-002
+A: v18
+B: v18
+C: v18
+```
+
+`SKU-001` contains a potential stale system while `SKU-002` is consistent. Versions belonging to different SKUs, such as `SKU-001 v42` and `SKU-002 v18`, must never be compared.
 
 Rules:
 
@@ -48,6 +64,7 @@ Rules:
 - Failed writes do not change version.
 - A reconciliation write adopts the chosen canonical `target_version`.
 - A reconciliation write must not simply calculate `current_version + 1`.
+- Version comparisons are valid only between records for the same SKU.
 
 ---
 
@@ -130,12 +147,15 @@ processed_at
 reference
 ```
 
+Events belong to an individual SKU's inventory stream. `last_event`, `event_cursor`, and recent event history must not be shared or compared across different SKUs.
+
 Rules:
 
 - Event IDs are unique.
-- `last_event` is included in the standard inventory response.
+- `last_event` is included in that SKU's inventory record.
 - Deeper history is stored internally and exposed only through:
   GET /inventory/{sku}/events
+- The event-history endpoint returns events for the requested SKU only.
 - Failed writes do not create events.
 - Event history must remain ordered by processing sequence.
 
@@ -143,21 +163,21 @@ Rules:
 
 ## 7. Event Cursor
 
-Each warehouse tracks an `event_cursor`.
+Each warehouse tracks an `event_cursor` independently for every SKU.
 
 Rules:
 
-- It represents the latest event the warehouse has processed.
+- It represents the latest event the warehouse has processed for that SKU.
 - It must never move backwards.
 - Processing a newer event advances the cursor.
 - A stale warehouse may intentionally have an older cursor.
-- Event cursor values should be comparable across systems participating in the same logical inventory stream.
+- Event cursor values should be compared only across systems participating in the same SKU's logical inventory stream.
 
 ---
 
 ## 8. Sync Metadata
 
-Each warehouse tracks:
+Each warehouse tracks the following metadata independently for every SKU:
 
 ```text
 status
@@ -178,10 +198,12 @@ unknown
 
 Rules:
 
-- `last_synced_version` refers to the latest shared inventory revision successfully applied.
-- `sync_lag_seconds` represents estimated synchronisation lag.
+- `last_synced_version` refers to the latest shared inventory revision successfully applied for that SKU.
+- `event_cursor` refers to that SKU's inventory-event stream.
+- `sync_lag_seconds` represents estimated synchronisation lag for that SKU.
 - A warehouse may be healthy while still being behind.
 - Sync metadata must not silently alter inventory quantities.
+- Warehouse/service health remains warehouse-wide and is not SKU-scoped.
 
 ---
 
@@ -253,7 +275,9 @@ Rules:
 
 ## 12. Successful Reconciliation Update
 
-A valid reconciliation write should:
+A valid reconciliation write to `PUT /inventory/{sku}` is SKU-specific. It must modify only the requested product and must not alter any other inventory record.
+
+It should:
 
 ```text
 1. Confirm the SKU exists.
@@ -331,15 +355,17 @@ reporting health and sync metadata
 The reconciliation agent is responsible for:
 
 ```text
-querying multiple warehouses
-comparing evidence
-requesting deeper event history when necessary
-deciding which state is credible
-choosing reconcile / no-action / escalate
-planning writes
-executing writes
-verifying results
-measuring synchronisation cost
+retrieving complete catalogues from multiple warehouses
+discovering the union of SKUs and conflicts
+ignoring consistent products after initial comparison
+requesting SKU-specific event history when necessary
+deciding independently whether each conflict is credible and safe
+choosing reconcile / no-action / escalate per SKU
+planning targeted writes across the complete run
+executing and verifying SKU-specific writes
+measuring warehouse-wide synchronisation cost
 ```
 
 The warehouse must not decide which system is correct. That decision belongs to the reconciliation agent.
+
+The agent receives only warehouse API URLs and warehouse HTTP responses. It must never read scenario files directly or receive the scenario name, a list of conflicting SKUs, expected results, or instructions identifying which warehouse is stale. Scenario-specific logic must never appear in reconciliation code.
