@@ -1,0 +1,2 @@
+"""Reusable simulated warehouse service."""
+

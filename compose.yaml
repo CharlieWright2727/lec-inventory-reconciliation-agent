@@ -1,26 +1,27 @@
+x-warehouse-service: &warehouse-service
+  image: lec-inventory-reconciliation-agent-warehouse:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  command: uvicorn warehouse.app:app --host 0.0.0.0 --port 8000
+
 services:
   warehouse-a:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *warehouse-service
     env_file:
       - config/warehouse-a.env
     ports:
       - "8001:8000"
 
   warehouse-b:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *warehouse-service
     env_file:
       - config/warehouse-b.env
     ports:
       - "8002:8000"
 
   warehouse-c:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *warehouse-service
     env_file:
       - config/warehouse-c.env
     ports:

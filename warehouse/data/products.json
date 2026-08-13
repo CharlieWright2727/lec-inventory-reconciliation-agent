@@ -1,0 +1,54 @@
+{
+  "products": [
+    {
+      "sku": "SKU-001",
+      "name": "Wireless Keyboard",
+      "barcode": "5012345678901"
+    },
+    {
+      "sku": "SKU-002",
+      "name": "USB-C Hub",
+      "barcode": "5012345678902"
+    },
+    {
+      "sku": "SKU-003",
+      "name": "Wireless Mouse",
+      "barcode": "5012345678903"
+    },
+    {
+      "sku": "SKU-004",
+      "name": "Laptop Stand",
+      "barcode": "5012345678904"
+    },
+    {
+      "sku": "SKU-005",
+      "name": "1080p Webcam",
+      "barcode": "5012345678905"
+    },
+    {
+      "sku": "SKU-006",
+      "name": "USB-C Charging Cable",
+      "barcode": "5012345678906"
+    },
+    {
+      "sku": "SKU-007",
+      "name": "65W USB-C Charger",
+      "barcode": "5012345678907"
+    },
+    {
+      "sku": "SKU-008",
+      "name": "Noise-Cancelling Headset",
+      "barcode": "5012345678908"
+    },
+    {
+      "sku": "SKU-009",
+      "name": "Portable SSD 1TB",
+      "barcode": "5012345678909"
+    },
+    {
+      "sku": "SKU-010",
+      "name": "27-inch Monitor",
+      "barcode": "5012345678910"
+    }
+  ]
+}

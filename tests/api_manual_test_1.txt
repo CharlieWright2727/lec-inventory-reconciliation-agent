@@ -1,0 +1,184 @@
+API Test 1
+==========
+
+Repository:
+lec-inventory-reconciliation-agent
+
+Purpose:
+Verify that the three local warehouse APIs are running and that warehouse-specific inventory data can be retrieved successfully.
+
+Test 1: Health Endpoints
+------------------------
+
+Commands run:
+
+curl -s http://localhost:8001/health
+curl -s http://localhost:8002/health
+curl -s http://localhost:8003/health
+
+Output:
+
+{"system_id":"warehouse-a","status":"healthy"}{"system_id":"warehouse-b","status":"healthy"}{"system_id":"warehouse-c","status":"healthy"}
+
+Result:
+PASS
+
+All three warehouse services responded successfully and reported a healthy status.
+
+- Warehouse A: localhost:8001
+- Warehouse B: localhost:8002
+- Warehouse C: localhost:8003
+
+
+Test 2: Targeted Inventory Reads
+--------------------------------
+
+Commands run:
+
+curl -s http://localhost:8001/inventory/SKU-001 | python3 -m json.tool
+
+curl -s http://localhost:8002/inventory/SKU-001 | python3 -m json.tool
+
+
+Warehouse A response:
+
+{
+    "system": {
+        "id": "warehouse-a",
+        "health": {
+            "status": "healthy",
+            "last_heartbeat_at": "2026-08-13T22:33:06.867886Z",
+            "error_rate_5m": 0.0
+        }
+    },
+    "product": {
+        "sku": "SKU-001",
+        "name": "Wireless Keyboard",
+        "barcode": "5012345678901"
+    },
+    "inventory": {
+        "on_hand": 100,
+        "reserved": 1,
+        "available": 99
+    },
+    "state": {
+        "version": 41,
+        "snapshot_id": "snap-warehouse-a-SKU001-41",
+        "updated_at": "2026-08-13T18:00:00Z",
+        "updated_by": "catalogue-loader",
+        "checksum": "sha256:afb9e818249820f2ebf8e1cbcb9326329c48fd6c5ab55d511eaaab1726377141"
+    },
+    "last_event": {
+        "event_id": "evt-initial-SKU-001",
+        "type": "stock_received",
+        "quantity_delta": 100,
+        "occurred_at": "2026-08-13T18:00:00Z",
+        "processed_at": "2026-08-13T18:00:00Z",
+        "reference": "initial-catalogue-load"
+    },
+    "sync": {
+        "status": "up_to_date",
+        "last_successful_sync_at": "2026-08-13T18:00:00Z",
+        "last_synced_version": 41,
+        "event_cursor": 1,
+        "sync_lag_seconds": 0
+    },
+    "data_quality": {
+        "status": "valid",
+        "warnings": [],
+        "last_validated_at": "2026-08-13T18:00:00Z"
+    },
+    "capabilities": {
+        "writable": true,
+        "supports_version_check": true
+    }
+}
+
+
+Warehouse B response:
+
+{
+    "system": {
+        "id": "warehouse-b",
+        "health": {
+            "status": "healthy",
+            "last_heartbeat_at": "2026-08-13T22:33:06.951484Z",
+            "error_rate_5m": 0.0
+        }
+    },
+    "product": {
+        "sku": "SKU-001",
+        "name": "Wireless Keyboard",
+        "barcode": "5012345678901"
+    },
+    "inventory": {
+        "on_hand": 100,
+        "reserved": 1,
+        "available": 99
+    },
+    "state": {
+        "version": 41,
+        "snapshot_id": "snap-warehouse-b-SKU001-41",
+        "updated_at": "2026-08-13T18:00:00Z",
+        "updated_by": "catalogue-loader",
+        "checksum": "sha256:afb9e818249820f2ebf8e1cbcb9326329c48fd6c5ab55d511eaaab1726377141"
+    },
+    "last_event": {
+        "event_id": "evt-initial-SKU-001",
+        "type": "stock_received",
+        "quantity_delta": 100,
+        "occurred_at": "2026-08-13T18:00:00Z",
+        "processed_at": "2026-08-13T18:00:00Z",
+        "reference": "initial-catalogue-load"
+    },
+    "sync": {
+        "status": "up_to_date",
+        "last_successful_sync_at": "2026-08-13T18:00:00Z",
+        "last_synced_version": 41,
+        "event_cursor": 1,
+        "sync_lag_seconds": 0
+    },
+    "data_quality": {
+        "status": "valid",
+        "warnings": [],
+        "last_validated_at": "2026-08-13T18:00:00Z"
+    },
+    "capabilities": {
+        "writable": true,
+        "supports_version_check": true
+    }
+}
+
+Result:
+PASS
+
+The targeted inventory endpoint returned the expected SKU-001 record from both Warehouse A and Warehouse B.
+
+Observed state for SKU-001:
+- Product: Wireless Keyboard
+- On hand: 100
+- Reserved: 1
+- Available: 99
+- Version: 41
+- Data quality: valid
+- Warehouse writable: true
+- Version checking supported: true
+
+The two services correctly identify themselves independently through:
+- warehouse-a
+- warehouse-b
+
+The snapshot IDs are also warehouse-specific while the logical inventory data remains consistent.
+
+Overall Result
+--------------
+
+PASS
+
+The initial local API checks confirm that:
+1. All three warehouse services are running.
+2. All three report healthy status.
+3. Targeted SKU reads work over HTTP.
+4. Warehouse identity is correctly separated.
+5. Inventory state is returned using the expected schema.
+6. Warehouse A and Warehouse B currently report consistent state for SKU-001.

@@ -4,9 +4,11 @@ This document defines the agreed warehouse inventory response schemas for the LE
 
 Each warehouse stores a catalogue containing multiple products. The agent normally retrieves the complete catalogue from every warehouse, discovers the union of SKUs, and compares matching product records. Deeper event history is deliberately excluded and is retrieved separately only for conflicting SKUs when required.
 
-## InventoryRecord
+## Primary Warehouse Catalogue Response
 
-An `InventoryRecord` represents one product/SKU in one warehouse. Product-specific information belongs to this record:
+The primary response from `GET /inventory` is a warehouse catalogue. Its `items` array contains one complete `InventoryRecord` for every product/SKU held by the warehouse.
+
+An `InventoryRecord` contains these product-specific sections:
 
 ```text
 product
@@ -17,7 +19,7 @@ sync
 data_quality
 ```
 
-The following single-record structure remains the response body for a targeted `GET /inventory/{sku}` request. Warehouse-wide `system`, `system.health`, and `capabilities` information surrounds the individual record but is not conceptually part of it.
+The example below shows one complete array entry for readability. In a real response, the `items` array repeats this complete structure for every SKU.
 
 ```json
 {
@@ -29,43 +31,47 @@ The following single-record structure remains the response body for a targeted `
       "error_rate_5m": 0.0
     }
   },
-  "product": {
-    "sku": "SKU-001",
-    "name": "Wireless Keyboard",
-    "barcode": "5012345678901"
-  },
-  "inventory": {
-    "on_hand": 120,
-    "reserved": 8,
-    "available": 112
-  },
-  "state": {
-    "version": 42,
-    "snapshot_id": "snap-warehouse-a-SKU001-42",
-    "updated_at": "2026-08-13T18:27:14Z",
-    "updated_by": "inventory-event-processor",
-    "checksum": "sha256:abc123..."
-  },
-  "last_event": {
-    "event_id": "evt-1042",
-    "type": "stock_received",
-    "quantity_delta": 20,
-    "occurred_at": "2026-08-13T18:27:12Z",
-    "processed_at": "2026-08-13T18:27:14Z",
-    "reference": "delivery-8841"
-  },
-  "sync": {
-    "status": "up_to_date",
-    "last_successful_sync_at": "2026-08-13T18:27:16Z",
-    "last_synced_version": 42,
-    "event_cursor": 1042,
-    "sync_lag_seconds": 2
-  },
-  "data_quality": {
-    "status": "valid",
-    "warnings": [],
-    "last_validated_at": "2026-08-13T18:27:15Z"
-  },
+  "items": [
+    {
+      "product": {
+        "sku": "SKU-001",
+        "name": "Wireless Keyboard",
+        "barcode": "5012345678901"
+      },
+      "inventory": {
+        "on_hand": 120,
+        "reserved": 8,
+        "available": 112
+      },
+      "state": {
+        "version": 42,
+        "snapshot_id": "snap-warehouse-a-SKU001-42",
+        "updated_at": "2026-08-13T18:27:14Z",
+        "updated_by": "inventory-event-processor",
+        "checksum": "sha256:abc123..."
+      },
+      "last_event": {
+        "event_id": "evt-1042",
+        "type": "stock_received",
+        "quantity_delta": 20,
+        "occurred_at": "2026-08-13T18:27:12Z",
+        "processed_at": "2026-08-13T18:27:14Z",
+        "reference": "delivery-8841"
+      },
+      "sync": {
+        "status": "up_to_date",
+        "last_successful_sync_at": "2026-08-13T18:27:16Z",
+        "last_synced_version": 42,
+        "event_cursor": 1042,
+        "sync_lag_seconds": 2
+      },
+      "data_quality": {
+        "status": "valid",
+        "warnings": [],
+        "last_validated_at": "2026-08-13T18:27:15Z"
+      }
+    }
+  ],
   "capabilities": {
     "writable": true,
     "supports_version_check": true
@@ -73,9 +79,23 @@ The following single-record structure remains the response body for a targeted `
 }
 ```
 
-## Warehouse Catalogue Response
+## Expanded Warehouse Catalogue Example
 
-`GET /inventory` returns all inventory records currently stored by one warehouse. Warehouse/service information appears once, outside `items`, rather than being repeated for every SKU.
+`GET /inventory` returns all inventory records currently stored by one warehouse. The `items` array contains one complete `InventoryRecord` for every SKU in that warehouse; it is not a list of product identities or abbreviated records.
+
+Every element in `items` therefore contains all six SKU-scoped sections:
+
+```text
+items[]
+├── product
+├── inventory
+├── state
+├── last_event
+├── sync
+└── data_quality
+```
+
+Warehouse/service information appears once, outside `items`, rather than being repeated for every SKU. The example below shows two complete items to demonstrate the repeated structure. A real response repeats the same complete structure for every product in the warehouse catalogue (currently `SKU-001` through `SKU-010`).
 
 ```json
 {
@@ -177,7 +197,28 @@ The following single-record structure remains the response body for a targeted `
 The catalogue separates scope deliberately:
 
 - `system`, `system.health`, and `capabilities` describe the warehouse/service as a whole;
-- `product`, `inventory`, `state`, `last_event`, `sync`, and `data_quality` describe one SKU.
+- each entry in `items` is a complete `InventoryRecord` for one SKU;
+- every entry contains its own `product`, `inventory`, `state`, `last_event`, `sync`, and `data_quality` sections;
+- none of those SKU-scoped sections may be omitted merely because another item already contains fields with the same names.
+
+Conceptually, the complete response is:
+
+```text
+CatalogueResponse
+├── system                         warehouse-wide, included once
+├── items
+│   ├── InventoryRecord: SKU-001   all six SKU-scoped sections
+│   ├── InventoryRecord: SKU-002   all six SKU-scoped sections
+│   ├── InventoryRecord: SKU-003   all six SKU-scoped sections
+│   └── ...one complete record for every remaining SKU
+└── capabilities                   warehouse-wide, included once
+```
+
+## Targeted SKU Response
+
+`GET /inventory/{sku}` returns one selected `InventoryRecord` rather than a catalogue. That targeted response intentionally has no `items` array: the selected record's `product`, `inventory`, `state`, `last_event`, `sync`, and `data_quality` sections appear directly between the warehouse-wide `system` and `capabilities` fields.
+
+Use `GET /inventory` when the agent needs to discover and compare the complete warehouse catalogue. Use `GET /inventory/{sku}` only for a targeted read or post-update verification.
 
 ## Version Semantics
 
