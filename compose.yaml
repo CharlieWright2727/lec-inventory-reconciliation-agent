@@ -1,0 +1,40 @@
+services:
+  warehouse-a:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - config/warehouse-a.env
+    ports:
+      - "8001:8000"
+
+  warehouse-b:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - config/warehouse-b.env
+    ports:
+      - "8002:8000"
+
+  warehouse-c:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - config/warehouse-c.env
+    ports:
+      - "8003:8000"
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      WAREHOUSE_A_URL: http://warehouse-a:8000
+      WAREHOUSE_B_URL: http://warehouse-b:8000
+      WAREHOUSE_C_URL: http://warehouse-c:8000
+    depends_on:
+      - warehouse-a
+      - warehouse-b
+      - warehouse-c

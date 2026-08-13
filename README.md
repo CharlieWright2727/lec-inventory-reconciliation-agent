@@ -20,3 +20,16 @@ The agent will:
 The project will simulate multiple independent inventory systems through local APIs. A reconciliation agent will inspect their inventory state, determine whether conflicting records can safely be resolved, execute any required updates, verify the resulting state and produce an auditable cost report.
 
 The exact reconciliation strategy and architecture will be developed as part of the assessment.
+
+## Planned Runtime Architecture
+
+The project is designed to run as four containerised services:
+
+- `warehouse-a`
+- `warehouse-b`
+- `warehouse-c`
+- `reconciliation-agent`
+
+The three warehouses will share one implementation and use separate configuration.
+
+Docker Compose will provide a reproducible environment for running the complete assessment locally. Application functionality has not yet been implemented, so the current containers are scaffolding only and do not provide working APIs or agent behaviour.
