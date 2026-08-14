@@ -31,6 +31,7 @@ def create_app(
     *,
     warehouse_id: str | None = None,
     product_data_path: Path | None = None,
+    scenario_data_path: Path | None = None,
     writable: bool = True,
 ) -> FastAPI:
     resolved_id = warehouse_id or os.getenv("WAREHOUSE_ID", "warehouse-local")
@@ -38,11 +39,16 @@ def create_app(
     resolved_path = product_data_path or (
         Path(configured_path) if configured_path else DEFAULT_PRODUCT_DATA_PATH
     )
+    configured_scenario_path = os.getenv("SCENARIO_DATA_PATH")
+    resolved_scenario_path = scenario_data_path or (
+        Path(configured_scenario_path) if configured_scenario_path else None
+    )
 
     app = FastAPI(title=f"Inventory API: {resolved_id}")
     app.state.store = WarehouseStore(
         warehouse_id=resolved_id,
         product_data_path=resolved_path,
+        scenario_data_path=resolved_scenario_path,
         writable=writable,
     )
 

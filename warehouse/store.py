@@ -58,6 +58,7 @@ class WarehouseStore:
         warehouse_id: str,
         product_data_path: Path,
         *,
+        scenario_data_path: Path | None = None,
         writable: bool = True,
     ) -> None:
         self.warehouse_id = warehouse_id
@@ -66,7 +67,7 @@ class WarehouseStore:
             supports_version_check=True,
         )
         self._records, self._event_history = load_inventory_records(
-            warehouse_id, product_data_path
+            warehouse_id, product_data_path, scenario_data_path
         )
         self._lock = RLock()
 

@@ -254,7 +254,47 @@ clean experimentation
 easy recovery after reconciliation changes the state
 ```
 
-The exact reset command or mechanism can be decided during implementation.
+Because warehouse state is held in memory, recreating the containers reloads the
+configured scenario exactly:
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+## Implemented Scenario: `one-stale-warehouse`
+
+The warehouse environment files currently set `SCENARIO_DATA_PATH` so each
+service loads its matching file from:
+
+```text
+scenarios/one-stale-warehouse/
+├── warehouse-a.json
+├── warehouse-b.json
+└── warehouse-c.json
+```
+
+Run `docker compose up --build` to start Warehouse A, B, and C on host ports
+8001, 8002, and 8003. Each scenario file is a validated overlay on the shared
+product catalogue and default deterministic inventory. This keeps the nine
+unchanged SKUs in one shared definition while replacing `SKU-001` with the
+warehouse-specific state and event history required by the scenario.
+
+Warehouse A and C have processed event `evt-1042`, producing version 42 and an
+on-hand quantity of 120. Warehouse B's visible event history stops at
+`evt-1041`, version 41, and an on-hand quantity of 100. The runtime files do not
+label either state as correct or stale.
+
+The expected observable result used to validate this setup is stored separately
+at:
+
+```text
+tests/expectations/one-stale-warehouse.json
+```
+
+This file is a test oracle only. The future reconciliation agent must never load
+or rely on the expectation file. It only receives warehouse API URLs and
+observes warehouse state through HTTP.
 
 ---
 

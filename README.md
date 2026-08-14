@@ -30,11 +30,11 @@ Implemented:
 - catalogue, targeted SKU, and SKU-specific event-history reads;
 - validated, version-aware inventory updates with optimistic concurrency;
 - a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
+- deterministic scenario loading, including the `one-stale-warehouse` scenario;
 - focused warehouse API tests.
 
 Not yet implemented:
 
-- scenario selection and loading;
 - the reconciliation agent and its decision logic;
 - cost instrumentation;
 - a CLI demonstration runner.
