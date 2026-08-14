@@ -65,6 +65,8 @@ Rules:
 - A reconciliation write adopts the chosen canonical `target_version`.
 - A reconciliation write must not simply calculate `current_version + 1`.
 - Version comparisons are valid only between records for the same SKU.
+- A request using the current version and identical inventory is an idempotent no-op and must not change state or metadata.
+- A request using the current version with different inventory must return `409 Conflict`; one logical version cannot represent two inventory states.
 
 ---
 
@@ -86,6 +88,7 @@ Rules:
 - If it does not match, return `409 Conflict`.
 - Rejected writes must not alter state.
 - `target_version` must not be lower than the warehouse's current version.
+- A same-version request may proceed only as an unchanged, idempotent response when its inventory exactly matches the stored state.
 
 This prevents the agent from overwriting a newer change that occurred after its initial read.
 

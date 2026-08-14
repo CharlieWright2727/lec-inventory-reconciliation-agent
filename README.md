@@ -21,15 +21,22 @@ The project will simulate multiple independent inventory systems through local A
 
 The exact reconciliation strategy and architecture will be developed as part of the assessment.
 
-## Planned Runtime Architecture
+## Current status
 
-The project is designed to run as four containerised services:
+Implemented:
 
-- `warehouse-a`
-- `warehouse-b`
-- `warehouse-c`
-- `reconciliation-agent`
+- three independent simulated warehouse APIs;
+- one reusable FastAPI implementation with multi-product catalogues;
+- catalogue, targeted SKU, and SKU-specific event-history reads;
+- validated, version-aware inventory updates with optimistic concurrency;
+- a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
+- focused warehouse API tests.
 
-The three warehouses will share one implementation and use separate configuration.
+Not yet implemented:
 
-Docker Compose will provide a reproducible environment for running the complete assessment locally. Application functionality has not yet been implemented, so the current containers are scaffolding only and do not provide working APIs or agent behaviour.
+- scenario selection and loading;
+- the reconciliation agent and its decision logic;
+- cost instrumentation;
+- a CLI demonstration runner.
+
+The three warehouse containers share one implementation and image while using separate identities and independent in-memory state.

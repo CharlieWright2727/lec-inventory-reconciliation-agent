@@ -125,6 +125,46 @@ def test_valid_write_adopts_target_version() -> None:
     assert updated["last_event"]["type"] == "stock_adjustment"
 
 
+def test_same_version_with_different_inventory_returns_409_without_changes() -> None:
+    client = make_client()
+    before = sku_state(client.get("/inventory/SKU-001").json())
+    events_before = client.get("/inventory/SKU-001/events").json()
+
+    response = client.put(
+        "/inventory/SKU-001",
+        json=update_payload(target_version=41),
+    )
+
+    assert response.status_code == 409
+    assert "same logical version" in response.json()["message"]
+    assert sku_state(client.get("/inventory/SKU-001").json()) == before
+    assert client.get("/inventory/SKU-001/events").json() == events_before
+
+
+def test_same_version_with_identical_inventory_is_idempotent() -> None:
+    client = make_client()
+    before = sku_state(client.get("/inventory/SKU-001").json())
+    events_before = client.get("/inventory/SKU-001/events").json()
+    inventory = before["inventory"]
+
+    response = client.put(
+        "/inventory/SKU-001",
+        json=update_payload(
+            target_version=before["state"]["version"],
+            on_hand=inventory["on_hand"],
+            reserved=inventory["reserved"],
+            available=inventory["available"],
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unchanged"
+    assert response.json()["previous_version"] == 41
+    assert response.json()["new_version"] == 41
+    assert sku_state(client.get("/inventory/SKU-001").json()) == before
+    assert client.get("/inventory/SKU-001/events").json() == events_before
+
+
 def test_stale_expected_version_returns_409_without_changing_state() -> None:
     client = make_client()
     assert client.put("/inventory/SKU-001", json=update_payload()).status_code == 200

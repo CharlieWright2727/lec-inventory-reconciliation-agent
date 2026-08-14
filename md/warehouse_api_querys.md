@@ -158,6 +158,20 @@ The request carries two distinct version values:
 
 The warehouse adopts `target_version`; it does not independently increment a local counter.
 
+If `target_version` equals the current version and the supplied inventory is identical, the request is an idempotent no-op:
+
+```json
+{
+  "status": "unchanged",
+  "system_id": "warehouse-b",
+  "sku": "SKU-001",
+  "previous_version": 42,
+  "new_version": 42
+}
+```
+
+This response does not create a snapshot or event and does not update timestamps, the event cursor, or sync metadata. If the supplied inventory differs while using the same version, the warehouse returns `409 Conflict` because one logical version cannot represent two inventory states.
+
 If the SKU no longer matches `expected_current_version`, the update must not be applied and the warehouse returns `409 Conflict`.
 
 ```json

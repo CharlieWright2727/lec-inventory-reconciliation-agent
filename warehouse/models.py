@@ -120,7 +120,7 @@ class InventoryUpdateRequest(BaseModel):
 
 
 class InventoryUpdateResponse(BaseModel):
-    status: Literal["updated"]
+    status: Literal["updated", "unchanged"]
     system_id: str
     sku: str
     previous_version: int
@@ -130,4 +130,3 @@ class InventoryUpdateResponse(BaseModel):
 class HealthResponse(BaseModel):
     system_id: str
     status: Literal["healthy", "degraded", "unavailable"]
-

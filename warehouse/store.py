@@ -44,6 +44,14 @@ class TargetVersionError(RuntimeError):
         super().__init__(f"target version {target} is older than current version {current}")
 
 
+class SameVersionInventoryConflictError(RuntimeError):
+    def __init__(self, version: int) -> None:
+        self.version = version
+        super().__init__(
+            f"logical version {version} already represents different inventory"
+        )
+
+
 class WarehouseStore:
     def __init__(
         self,
@@ -119,6 +127,16 @@ class WarehouseStore:
                 )
             if request.target_version < current.state.version:
                 raise TargetVersionError(request.target_version, current.state.version)
+            if request.target_version == current.state.version:
+                if request.inventory != current.inventory:
+                    raise SameVersionInventoryConflictError(current.state.version)
+                return InventoryUpdateResponse(
+                    status="unchanged",
+                    system_id=self.warehouse_id,
+                    sku=sku,
+                    previous_version=current.state.version,
+                    new_version=current.state.version,
+                )
 
             now = datetime.now(timezone.utc)
             previous_version = current.state.version
@@ -177,4 +195,3 @@ class WarehouseStore:
             return self._records[sku]
         except KeyError as exc:
             raise UnknownSkuError(sku) from exc
-

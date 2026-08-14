@@ -15,6 +15,7 @@ from warehouse.models import (
     InventoryUpdateResponse,
 )
 from warehouse.store import (
+    SameVersionInventoryConflictError,
     TargetVersionError,
     UnknownSkuError,
     VersionConflictError,
@@ -106,6 +107,19 @@ def create_app(
                     "message": "Target version is older than current state.",
                     "target_version": exc.target,
                     "current_version": exc.current,
+                },
+            )
+        except SameVersionInventoryConflictError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "status": "conflict",
+                    "message": (
+                        "The same logical version cannot represent a different "
+                        "inventory state."
+                    ),
+                    "target_version": exc.version,
+                    "current_version": exc.version,
                 },
             )
 

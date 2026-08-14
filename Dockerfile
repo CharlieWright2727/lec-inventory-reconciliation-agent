@@ -10,4 +10,4 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-c", "print('Scaffolding only: application functionality has not been implemented.')"]
+CMD ["uvicorn", "warehouse.app:app", "--host", "0.0.0.0", "--port", "8000"]

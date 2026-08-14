@@ -3,7 +3,6 @@ x-warehouse-service: &warehouse-service
   build:
     context: .
     dockerfile: Dockerfile
-  command: uvicorn warehouse.app:app --host 0.0.0.0 --port 8000
 
 services:
   warehouse-a:
@@ -26,16 +25,3 @@ services:
       - config/warehouse-c.env
     ports:
       - "8003:8000"
-
-  agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      WAREHOUSE_A_URL: http://warehouse-a:8000
-      WAREHOUSE_B_URL: http://warehouse-b:8000
-      WAREHOUSE_C_URL: http://warehouse-c:8000
-    depends_on:
-      - warehouse-a
-      - warehouse-b
-      - warehouse-c
