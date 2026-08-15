@@ -1,0 +1,59 @@
+{
+  "records": [
+    {
+      "sku": "SKU-001",
+      "inventory": {"on_hand": 130, "reserved": 8, "available": 122},
+      "state": {
+        "version": 43,
+        "updated_at": "2026-08-13T18:33:14Z",
+        "updated_by": "inventory-event-processor"
+      },
+      "last_event": {
+        "event_id": "evt-1043-c",
+        "type": "stock_adjustment",
+        "quantity_delta": 10,
+        "occurred_at": "2026-08-13T18:33:12Z",
+        "processed_at": "2026-08-13T18:33:14Z",
+        "reference": "cycle-count-branch-c"
+      },
+      "sync": {
+        "status": "up_to_date",
+        "last_successful_sync_at": "2026-08-13T18:33:16Z",
+        "last_synced_version": 43,
+        "event_cursor": 1043,
+        "sync_lag_seconds": 2
+      },
+      "data_quality": {
+        "status": "valid",
+        "warnings": [],
+        "last_validated_at": "2026-08-13T18:33:15Z"
+      },
+      "events": [
+        {
+          "event_id": "evt-1041",
+          "type": "stock_received",
+          "quantity_delta": 100,
+          "occurred_at": "2026-08-13T18:21:03Z",
+          "processed_at": "2026-08-13T18:21:05Z",
+          "reference": "opening-stock-1041"
+        },
+        {
+          "event_id": "evt-1042",
+          "type": "stock_received",
+          "quantity_delta": 20,
+          "occurred_at": "2026-08-13T18:27:12Z",
+          "processed_at": "2026-08-13T18:27:14Z",
+          "reference": "delivery-8841"
+        },
+        {
+          "event_id": "evt-1043-c",
+          "type": "stock_adjustment",
+          "quantity_delta": 10,
+          "occurred_at": "2026-08-13T18:33:12Z",
+          "processed_at": "2026-08-13T18:33:14Z",
+          "reference": "cycle-count-branch-c"
+        }
+      ]
+    }
+  ]
+}

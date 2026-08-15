@@ -94,3 +94,73 @@ Cost:
 Second run:
   The unresolved conflict is investigated and safely escalated again.
   PUT: 0
+
+
+competing-newer-states
+----------------------
+Compose override: compose.competing-newer-states.yaml
+
+Initial analysis:
+  Products discovered: 10
+  Consistent: 9
+  Conflicts: 1
+
+Decision and investigation:
+  SKU-001: INVESTIGATE
+  warehouse-b /inventory/SKU-001/events
+  warehouse-c /inventory/SKU-001/events
+  B extends evt-1042 to on_hand 110.
+  C extends evt-1042 to on_hand 130.
+  Multiple valid branches extend the same anchor to different supported states.
+
+Result:
+  SKU-001: ESCALATED
+
+Cost:
+  API calls: 5
+  GET: 5
+  PUT: 0
+  Catalogue observation calls: 3
+  Event investigation calls: 2
+  Reconciliation writes: 0
+  Verification reads: 0
+  Request bytes: 0
+  Response bytes: 25681
+  Total bytes transferred: 25681
+
+Second run:
+  The contradictory branches are investigated and safely escalated again.
+  PUT: 0
+
+
+missing-sku
+-----------
+Compose override: compose.missing-sku.yaml
+
+Initial analysis:
+  Products discovered: 10
+  Consistent: 9
+  Conflicts: 1
+
+Decision:
+  SKU-005: ESCALATE
+  Warehouse A and B contain the matching record.
+  Warehouse C returns 404 for SKU-005.
+
+Result:
+  SKU-005: ESCALATED
+
+Cost:
+  API calls: 3
+  GET: 3
+  PUT: 0
+  Catalogue observation calls: 3
+  Event investigation calls: 0
+  Reconciliation writes: 0
+  Verification reads: 0
+  Request bytes: 0
+  Response bytes: 23712
+  Total bytes transferred: 23712
+
+Second run:
+  The missing-SKU conflict safely escalates again with no extra reads or writes.

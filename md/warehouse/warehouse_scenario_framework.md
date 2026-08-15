@@ -280,6 +280,12 @@ product catalogue and default deterministic inventory. This keeps the nine
 unchanged SKUs in one shared definition while replacing `SKU-001` with the
 warehouse-specific state and event history required by the scenario.
 
+Scenario overlays may also declare `missing_skus` when a warehouse catalogue
+must genuinely omit a product. The loader removes both the record and its event
+history for that warehouse; it does not represent absence as zero inventory.
+Replacement and removal operations are validated, cannot overlap, and must
+refer to products in the shared catalogue.
+
 Warehouse A and C have processed event `evt-1042`, producing version 42 and an
 on-hand quantity of 120. Warehouse B's visible event history stops at
 `evt-1041`, version 41, and an on-hand quantity of 100. The runtime files do not

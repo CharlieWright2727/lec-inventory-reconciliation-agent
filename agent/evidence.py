@@ -153,8 +153,8 @@ def _relative_progress_findings(
     groups: list[AgreementGroup],
 ) -> list[EvidenceFinding]:
     findings: list[EvidenceFinding] = []
-    agreed_groups = [group for group in groups if len(group.warehouse_ids) >= 2]
-    for group_index, group in enumerate(agreed_groups):
+    reference_groups = _progress_reference_groups(groups)
+    for group_index, group in enumerate(reference_groups):
         for warehouse_id, record in sorted(conflict.records.items()):
             if warehouse_id in group.warehouse_ids:
                 continue
@@ -190,7 +190,7 @@ def _relative_progress_findings(
                         related=group.warehouse_ids,
                         detail=(
                             f"{warehouse_id} {label} {actual} is {direction} "
-                            f"the agreed {label} {reference}"
+                            f"the reference {label} {reference}"
                         ),
                     )
                 )
@@ -283,8 +283,8 @@ def _event_history_findings(
             )
         )
 
-    agreed_groups = [group for group in groups if len(group.warehouse_ids) >= 2]
-    for group_index, group in enumerate(agreed_groups):
+    reference_groups = _progress_reference_groups(groups)
+    for group_index, group in enumerate(reference_groups):
         for warehouse_id, events in sorted(valid_histories.items()):
             if warehouse_id in group.warehouse_ids:
                 continue
@@ -308,7 +308,7 @@ def _event_history_findings(
                         100 + group_index,
                         [warehouse_id],
                         related=group.warehouse_ids,
-                        detail="History cannot extend the agreed warehouse event tip",
+                        detail="History cannot extend the reference warehouse event tip",
                     )
                 )
                 continue
@@ -349,7 +349,64 @@ def _event_history_findings(
                     )
                 )
 
+    extensions = [
+        finding
+        for finding in findings
+        if finding.type == EvidenceType.EVENT_HISTORY_EXTENDS_KNOWN_STATE
+    ]
+    anchor_ids = sorted(
+        {finding.anchor_event_id for finding in extensions if finding.anchor_event_id}
+    )
+    for anchor_index, anchor_event_id in enumerate(anchor_ids):
+        branches = [
+            finding
+            for finding in extensions
+            if finding.anchor_event_id == anchor_event_id
+        ]
+        if len(branches) < 2 or len(
+            {finding.derived_on_hand for finding in branches}
+        ) < 2:
+            continue
+        warehouses = sorted(
+            {
+                warehouse_id
+                for finding in branches
+                for warehouse_id in finding.warehouse_ids
+            }
+        )
+        findings.append(
+            _finding(
+                conflict.sku,
+                EvidenceType.EVENT_HISTORIES_CONTRADICT,
+                500 + anchor_index,
+                warehouses,
+                detail=(
+                    f"Multiple valid event branches extend {anchor_event_id} "
+                    "to different supported states"
+                ),
+                anchor_event_id=anchor_event_id,
+            )
+        )
+
     return findings
+
+
+def _progress_reference_groups(
+    groups: list[AgreementGroup],
+) -> list[AgreementGroup]:
+    agreed = [group for group in groups if len(group.warehouse_ids) >= 2]
+    if agreed:
+        return agreed
+    return [
+        group
+        for group in groups
+        if all(
+            group.state.version < other.state.version
+            and group.state.event_cursor < other.state.event_cursor
+            for other in groups
+            if other is not group
+        )
+    ]
 
 
 def _finding(

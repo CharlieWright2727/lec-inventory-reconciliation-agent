@@ -1,0 +1,12 @@
+services:
+  warehouse-a:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/missing-sku/warehouse-a.json
+
+  warehouse-b:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/missing-sku/warehouse-b.json
+
+  warehouse-c:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/missing-sku/warehouse-c.json

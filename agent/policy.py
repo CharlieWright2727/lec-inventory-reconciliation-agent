@@ -41,22 +41,48 @@ def decide(evidence: EvidenceSet) -> ReconciliationDecision:
             reason="All observed warehouses already agree on the logical state.",
         )
 
+    ahead = _findings(
+        evidence,
+        EvidenceType.WAREHOUSE_AHEAD,
+        EvidenceType.EVENT_PROGRESS_AHEAD,
+    )
+    ahead_warehouses = {
+        warehouse_id
+        for finding in ahead
+        for warehouse_id in finding.warehouse_ids
+    }
     extension = _findings(
         evidence, EvidenceType.EVENT_HISTORY_EXTENDS_KNOWN_STATE
     )
     if len(extension) == 1:
         source = extension[0].warehouse_ids[0]
-        return _decision(
-            evidence,
-            DecisionOutcome.RECONCILE,
-            extension,
-            targets=sorted(set(evidence.observed_records) - {source}),
-            canonical_source=source,
-            reason=(
-                "The newer warehouse history contains the known event tip and "
-                "subsequent events explain its materialised state."
-            ),
+        unsupported_ahead = ahead_warehouses - {source}
+        uninvestigated = unsupported_ahead - set(
+            evidence.investigated_warehouses
         )
+        if uninvestigated:
+            return _decision(
+                evidence,
+                DecisionOutcome.INVESTIGATE,
+                ahead + extension,
+                reason=(
+                    "Other newer states still require causal investigation before "
+                    "one extension can be selected."
+                ),
+                investigate=sorted(uninvestigated),
+            )
+        if not unsupported_ahead:
+            return _decision(
+                evidence,
+                DecisionOutcome.RECONCILE,
+                extension,
+                targets=sorted(set(evidence.observed_records) - {source}),
+                canonical_source=source,
+                reason=(
+                    "The newer warehouse history contains the known event tip and "
+                    "subsequent events explain its materialised state."
+                ),
+            )
     if len(extension) > 1:
         return _decision(
             evidence,
@@ -134,16 +160,6 @@ def decide(evidence: EvidenceSet) -> ReconciliationDecision:
             ),
         )
 
-    ahead = _findings(
-        evidence,
-        EvidenceType.WAREHOUSE_AHEAD,
-        EvidenceType.EVENT_PROGRESS_AHEAD,
-    )
-    ahead_warehouses = {
-        warehouse_id
-        for finding in ahead
-        for warehouse_id in finding.warehouse_ids
-    }
     if len(ahead_warehouses) == 1:
         warehouse_id = next(iter(ahead_warehouses))
         return _decision(
@@ -157,6 +173,17 @@ def decide(evidence: EvidenceSet) -> ReconciliationDecision:
             investigate=[warehouse_id],
         )
     if len(ahead_warehouses) > 1:
+        if not evidence.investigated_warehouses:
+            return _decision(
+                evidence,
+                DecisionOutcome.INVESTIGATE,
+                ahead,
+                reason=(
+                    "Multiple newer states require causal investigation before "
+                    "a safe canonical state can be selected."
+                ),
+                investigate=sorted(ahead_warehouses),
+            )
         return _decision(
             evidence,
             DecisionOutcome.ESCALATE,

@@ -40,7 +40,7 @@ Implemented:
 - catalogue, targeted SKU, and SKU-specific event-history reads;
 - validated, version-aware inventory updates with optimistic concurrency;
 - a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
-- deterministic scenario loading for five warehouse conflict scenarios;
+- deterministic scenario loading for seven warehouse conflict scenarios;
 - a read-only V1 agent that observes warehouse catalogues concurrently;
 - structured run, observation, product, conflict, and API-cost models;
 - factual cross-warehouse conflict detection and a command-line run summary;
@@ -75,6 +75,8 @@ With the warehouses running, execute V3 with:
 | `same-version-divergence` | Causal replay and a shared repair revision |
 | `mixed-conflicts` | Multiple evidence strategies in one run |
 | `incomplete-event-history` | Safe escalation when causality is incomplete |
+| `competing-newer-states` | Contradictory causal branches trigger escalation |
+| `missing-sku` | Incomplete product coverage triggers escalation |
 
 `one-stale-warehouse` is the default Docker Compose scenario. Warehouse A and C
 agree on revision 42 while Warehouse B remains on revision 41.
@@ -142,6 +144,33 @@ Start it with:
 docker compose \
   -f compose.yaml \
   -f compose.incomplete-event-history.yaml \
+  up --build
+```
+
+`competing-newer-states` gives Warehouse B and C two different, individually
+valid extensions of the same Warehouse A event tip. V3 investigates both
+branches, recognises that the complete causal evidence is contradictory, and
+escalates without choosing either branch or performing a write.
+
+Start it with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.competing-newer-states.yaml \
+  up --build
+```
+
+`missing-sku` removes `SKU-005` entirely from Warehouse C while A and B retain
+matching records. V3 reports `missing_sku` and escalates without inventing,
+deleting, investigating, or mutating product state.
+
+Start it with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.missing-sku.yaml \
   up --build
 ```
 

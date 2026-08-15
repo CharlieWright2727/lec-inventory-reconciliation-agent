@@ -48,6 +48,7 @@ class V3Harness:
         }
         self.requests: list[tuple[str, str, str, int]] = []
         self.forced_put_status: dict[str, int] = {}
+        self.forced_event_status: dict[str, int] = {}
         self.before_put = None
         self.verification_overrides: dict[str, object] = {}
         self._put_count = 0
@@ -64,6 +65,9 @@ class V3Harness:
                 200, json=store.catalogue().model_dump(mode="json")
             )
         if request.method == "GET" and path.endswith("/events"):
+            forced = self.forced_event_status.get(warehouse_id)
+            if forced is not None:
+                return httpx.Response(forced, json={"detail": "forced failure"})
             sku = path.split("/")[2]
             return httpx.Response(
                 200,

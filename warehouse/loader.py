@@ -64,7 +64,21 @@ class ScenarioData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    records: list[ScenarioRecord] = Field(min_length=1)
+    records: list[ScenarioRecord] = Field(default_factory=list)
+    missing_skus: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_overlay_operations(self) -> "ScenarioData":
+        record_skus = [record.sku for record in self.records]
+        if not record_skus and not self.missing_skus:
+            raise ValueError("scenario must replace or remove at least one SKU")
+        if len(record_skus) != len(set(record_skus)):
+            raise ValueError("scenario records must not contain duplicate SKUs")
+        if len(self.missing_skus) != len(set(self.missing_skus)):
+            raise ValueError("missing_skus must not contain duplicates")
+        if set(record_skus) & set(self.missing_skus):
+            raise ValueError("a scenario cannot replace and remove the same SKU")
+        return self
 
 
 def inventory_checksum(inventory: Inventory) -> str:
@@ -187,3 +201,9 @@ def _apply_scenario(
         event_history[sku] = [
             event.model_copy(deep=True) for event in scenario_record.events
         ]
+
+    for sku in scenario.missing_skus:
+        if sku not in records:
+            raise ValueError(f"missing scenario SKU is not in product catalogue: {sku}")
+        del records[sku]
+        del event_history[sku]
