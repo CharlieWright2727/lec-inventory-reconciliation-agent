@@ -1,0 +1,43 @@
+{
+  "records": [
+    {
+      "sku": "SKU-001",
+      "inventory": {"on_hand": 105, "reserved": 8, "available": 97},
+      "state": {
+        "version": 43,
+        "updated_at": "2026-08-13T18:32:14Z",
+        "updated_by": "inventory-event-processor"
+      },
+      "last_event": {
+        "event_id": "evt-1043",
+        "type": "stock_adjustment",
+        "quantity_delta": -15,
+        "occurred_at": "2026-08-13T18:32:12Z",
+        "processed_at": "2026-08-13T18:32:14Z",
+        "reference": "cycle-count-5501"
+      },
+      "sync": {
+        "status": "up_to_date",
+        "last_successful_sync_at": "2026-08-13T18:32:16Z",
+        "last_synced_version": 43,
+        "event_cursor": 1043,
+        "sync_lag_seconds": 2
+      },
+      "data_quality": {
+        "status": "valid",
+        "warnings": [],
+        "last_validated_at": "2026-08-13T18:32:15Z"
+      },
+      "events": [
+        {
+          "event_id": "evt-1043",
+          "type": "stock_adjustment",
+          "quantity_delta": -15,
+          "occurred_at": "2026-08-13T18:32:12Z",
+          "processed_at": "2026-08-13T18:32:14Z",
+          "reference": "cycle-count-5501"
+        }
+      ]
+    }
+  ]
+}

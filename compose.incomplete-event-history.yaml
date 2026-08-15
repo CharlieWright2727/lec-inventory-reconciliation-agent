@@ -1,0 +1,12 @@
+services:
+  warehouse-a:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/incomplete-event-history/warehouse-a.json
+
+  warehouse-b:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/incomplete-event-history/warehouse-b.json
+
+  warehouse-c:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/incomplete-event-history/warehouse-c.json

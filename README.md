@@ -40,7 +40,7 @@ Implemented:
 - catalogue, targeted SKU, and SKU-specific event-history reads;
 - validated, version-aware inventory updates with optimistic concurrency;
 - a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
-- deterministic scenario loading for three warehouse conflict scenarios;
+- deterministic scenario loading for five warehouse conflict scenarios;
 - a read-only V1 agent that observes warehouse catalogues concurrently;
 - structured run, observation, product, conflict, and API-cost models;
 - factual cross-warehouse conflict detection and a command-line run summary;
@@ -67,6 +67,14 @@ With the warehouses running, execute V3 with:
 ```
 
 ## Deterministic scenarios
+
+| Scenario | Core behaviour |
+| --- | --- |
+| `one-stale-warehouse` | Direct stale reconciliation |
+| `newer-singleton` | Investigate a newer minority |
+| `same-version-divergence` | Causal replay and a shared repair revision |
+| `mixed-conflicts` | Multiple evidence strategies in one run |
+| `incomplete-event-history` | Safe escalation when causality is incomplete |
 
 `one-stale-warehouse` is the default Docker Compose scenario. Warehouse A and C
 agree on revision 42 while Warehouse B remains on revision 41.
@@ -109,6 +117,33 @@ V3 investigates event history only for the conflicting SKU. Shared complete
 history derives 120 units and identifies Warehouse C's materialised value as
 unsupported. It then advances A, B, and C to one repair revision and verifies the
 new shared state.
+
+`mixed-conflicts` contains three conflicting SKUs with three different patterns
+in one run. V3 directly repairs one stale replica, selectively investigates one
+newer singleton, and performs causal replay plus a shared repair revision for a
+same-version divergence. Each path is selected independently from runtime data.
+
+Start it with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.mixed-conflicts.yaml \
+  up --build
+```
+
+`incomplete-event-history` presents an apparently newer warehouse whose exposed
+history omits the known causal anchor. V3 investigates, cannot establish a safe
+canonical state, performs no writes, and escalates rather than guessing.
+
+Start it with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.incomplete-event-history.yaml \
+  up --build
+```
 
 The catalogue-only API remains `run_agent()`, V2 dry-run reasoning remains
 `run_agent_v2()`, and full reconciliation is `run_agent_v3()`. The CLI runs V3.

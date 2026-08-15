@@ -1,0 +1,12 @@
+services:
+  warehouse-a:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/mixed-conflicts/warehouse-a.json
+
+  warehouse-b:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/mixed-conflicts/warehouse-b.json
+
+  warehouse-c:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/mixed-conflicts/warehouse-c.json

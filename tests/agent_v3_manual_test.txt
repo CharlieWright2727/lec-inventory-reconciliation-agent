@@ -1,0 +1,445 @@
+INVENTORY RECONCILIATION AGENT — V3 MANUAL TEST RESULTS
+========================================================
+
+All three deterministic V3 scenarios were run manually against the real Docker
+warehouse APIs.
+
+Each scenario was run twice without restarting the warehouse containers:
+- first run: detect, reconcile and verify the conflict;
+- second run: confirm the environment had converged and no further writes were required.
+
+
+1. ONE STALE WAREHOUSE
+======================
+
+Initial state
+-------------
+warehouse-a
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-b
+  on_hand: 100
+  reserved: 8
+  available: 92
+  version: 41
+  event_cursor: 1041
+
+warehouse-c
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+First run
+---------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-001
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Evidence:
+- warehouse-a and warehouse-c agreed on inventory, revision 42,
+  event cursor 1042 and latest event.
+- warehouse-b version 41 was behind revision 42.
+- warehouse-b event cursor 1041 was behind cursor 1042.
+
+Decision:
+RECONCILE
+
+Canonical source:
+warehouse-a
+
+Target:
+warehouse-b
+
+Reconciliation plan:
+warehouse-b
+  version: 41 -> 42
+  inventory: 120 / 8 / 112
+
+Safety result:
+SAFE
+
+Execution:
+warehouse-b: SUCCESS
+version 41 -> 42
+
+Verification:
+warehouse-a: v42 / on_hand 120
+warehouse-b: v42 / on_hand 120
+warehouse-c: v42 / on_hand 120
+
+Remaining conflict:
+None
+
+Final result:
+RESOLVED
+
+First-run cost
+--------------
+API calls: 7
+Successful: 7
+Failed: 0
+GET: 6
+PUT: 1
+Catalogue observation calls: 3
+Event investigation calls: 0
+Reconciliation writes: 1
+Verification reads: 3
+Request bytes: 284
+Response bytes: 27642
+Total bytes transferred: 27926
+Total API latency: 58.31 ms
+Wall-clock time: 99.27 ms
+
+Second run
+----------
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+Result:
+No conflicts. No reconciliation required.
+
+API calls: 3
+GET: 3
+PUT: 0
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+
+TEST RESULT: PASS
+
+
+2. NEWER SINGLETON
+==================
+
+Initial state
+-------------
+warehouse-a
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-b
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-c
+  on_hand: 105
+  reserved: 8
+  available: 97
+  version: 43
+  event_cursor: 1043
+
+First run
+---------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-001
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Initial evidence:
+- warehouse-c version 43 was ahead of agreed version 42.
+- warehouse-c event cursor 1043 was ahead of agreed cursor 1042.
+
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-c /inventory/SKU-001/events
+
+New evidence:
+Events after evt-1042 derived on_hand 105 and explained warehouse-c's newer state.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-c
+
+Targets:
+- warehouse-a
+- warehouse-b
+
+Reconciliation plan:
+warehouse-a
+  version: 42 -> 43
+  inventory: 105 / 8 / 97
+
+warehouse-b
+  version: 42 -> 43
+  inventory: 105 / 8 / 97
+
+Safety result:
+SAFE
+
+Execution:
+warehouse-a: SUCCESS
+version 42 -> 43
+
+warehouse-b: SUCCESS
+version 42 -> 43
+
+Verification:
+warehouse-a: v43 / on_hand 105
+warehouse-b: v43 / on_hand 105
+warehouse-c: v43 / on_hand 105
+
+Remaining conflict:
+None
+
+Final result:
+RESOLVED
+
+First-run cost
+--------------
+API calls: 9
+Successful: 9
+Failed: 0
+GET: 7
+PUT: 2
+Catalogue observation calls: 3
+Event investigation calls: 1
+Reconciliation writes: 2
+Verification reads: 3
+Request bytes: 566
+Response bytes: 28431
+Total bytes transferred: 28997
+Total API latency: 57.83 ms
+Wall-clock time: 82.48 ms
+
+Second run
+----------
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+Result:
+No conflicts. No reconciliation required.
+
+API calls: 3
+GET: 3
+PUT: 0
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+
+TEST RESULT: PASS
+
+
+3. SAME-VERSION DIVERGENCE
+==========================
+
+Initial state
+-------------
+warehouse-a
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-b
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-c
+  on_hand: 115
+  reserved: 8
+  available: 107
+  version: 42
+  event_cursor: 1042
+
+First run
+---------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-001
+
+Conflict type:
+- inventory_mismatch
+
+Initial evidence:
+Materialised inventory differed even though logical version and event cursor agreed.
+
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-a /inventory/SKU-001/events
+GET warehouse-b /inventory/SKU-001/events
+GET warehouse-c /inventory/SKU-001/events
+
+New evidence:
+- Complete event replay derived on_hand 120 for warehouse-a.
+- Complete event replay derived on_hand 120 for warehouse-b.
+- Complete event replay derived on_hand 120 for warehouse-c.
+- warehouse-a observed on_hand was 120.
+- warehouse-b observed on_hand was 120.
+- warehouse-c observed on_hand was 115.
+- All three warehouses reported the same causal history.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-a
+
+Repair strategy:
+Shared repair revision 43
+
+Reconciliation plan:
+warehouse-a
+  version: 42 -> 43
+  inventory: 120 / 8 / 112
+
+warehouse-b
+  version: 42 -> 43
+  inventory: 120 / 8 / 112
+
+warehouse-c
+  version: 42 -> 43
+  inventory: 120 / 8 / 112
+
+Safety result:
+SAFE
+
+Execution:
+warehouse-a: SUCCESS
+version 42 -> 43
+
+warehouse-b: SUCCESS
+version 42 -> 43
+
+warehouse-c: SUCCESS
+version 42 -> 43
+
+Verification:
+warehouse-a: v43 / on_hand 120
+warehouse-b: v43 / on_hand 120
+warehouse-c: v43 / on_hand 120
+
+Remaining conflict:
+None
+
+Final result:
+RESOLVED
+
+First-run cost
+--------------
+API calls: 12
+Successful: 12
+Failed: 0
+GET: 9
+PUT: 3
+Catalogue observation calls: 3
+Event investigation calls: 3
+Reconciliation writes: 3
+Verification reads: 3
+Request bytes: 942
+Response bytes: 29340
+Total bytes transferred: 30282
+Total API latency: 72.58 ms
+Wall-clock time: 85.88 ms
+
+Second run
+----------
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+Result:
+No conflicts. No reconciliation required.
+
+API calls: 3
+GET: 3
+PUT: 0
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+
+TEST RESULT: PASS
+
+
+OVERALL RESULTS
+===============
+
+Scenario                  API calls   Investigation   PUTs   Verification   Final result
+------------------------  ----------  --------------  -----  -------------  ------------
+one-stale-warehouse       7           0               1      3              RESOLVED
+newer-singleton           9           1               2      3              RESOLVED
+same-version-divergence   12          3               3      3              RESOLVED
+
+
+SECOND-RUN CONVERGENCE
+======================
+
+All three scenarios were run a second time without restarting the containers.
+
+Every second run returned:
+
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+API calls: 3
+GET: 3
+PUT: 0
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+
+This confirms that each successful V3 reconciliation converged the distributed
+warehouse state and did not cause repeated reconciliation writes.
+
+
+FINAL RESULT
+============
+
+PASS
+
+All three deterministic V3 scenarios successfully completed the full:
+
+observe
+-> analyse
+-> evidence
+-> investigate where required
+-> decide
+-> plan
+-> safety validate
+-> execute
+-> verify
+-> resolve
+
+lifecycle against the real Docker warehouse APIs.

@@ -1,0 +1,35 @@
+{
+  "scenario": "mixed-conflicts",
+  "product_count": 10,
+  "consistent_sku_count": 7,
+  "conflicting_skus": ["SKU-001", "SKU-004", "SKU-007"],
+  "sku_001": {
+    "pattern": "stale_replica",
+    "initial_decision": "RECONCILE",
+    "event_investigation_warehouses": [],
+    "write_targets": ["warehouse-b"],
+    "final_outcome": "RESOLVED"
+  },
+  "sku_004": {
+    "pattern": "newer_singleton",
+    "initial_decision": "INVESTIGATE",
+    "event_investigation_warehouses": ["warehouse-c"],
+    "write_targets": ["warehouse-a", "warehouse-b"],
+    "supported_version": 51,
+    "supported_on_hand": 52,
+    "final_outcome": "RESOLVED"
+  },
+  "sku_007": {
+    "pattern": "same_version_divergence",
+    "initial_decision": "INVESTIGATE",
+    "event_investigation_warehouses": [
+      "warehouse-a",
+      "warehouse-b",
+      "warehouse-c"
+    ],
+    "write_targets": ["warehouse-a", "warehouse-b", "warehouse-c"],
+    "repair_version": 61,
+    "supported_on_hand": 40,
+    "final_outcome": "RESOLVED"
+  }
+}
