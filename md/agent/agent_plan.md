@@ -477,25 +477,56 @@ Detailed cost-reporting design will be handled separately.
 
 ---
 
-## Current Implementation Order
+## Implemented V1 Boundary
+
+Version 1 implements the read-only beginning of the agent loop:
+
+```text
+configured warehouse API URLs
+    ↓
+concurrent catalogue observation
+    ↓
+validated WarehouseObservations
+    ↓
+cross-warehouse ProductObservations
+    ↓
+factual consistency and conflict detection
+    ↓
+run summary and API cost report
+```
+
+V1 compares product identity, inventory quantities, logical version, and event
+cursor. It deliberately excludes warehouse-specific fields such as snapshot IDs
+and heartbeat timestamps from logical conflict detection.
+
+All V1 HTTP traffic passes through the instrumented asynchronous warehouse
+client. A normal run performs catalogue reads only. If any configured warehouse
+cannot be observed, the run retains its request metrics, reports failure, and
+does not analyse an incomplete warehouse view.
+
+V1 does not interpret which warehouse is stale, query event-history endpoints,
+choose a canonical state, make reconciliation decisions, create plans, perform
+writes, or verify updates. Those capabilities remain future milestones.
+
+Run V1 from the host after starting the warehouse services:
+
+```bash
+python -m agent.runner
+```
+
+## Remaining Implementation Order
 
 The proposed development order is:
 
 ```text
-1. Finalise general agent architecture.
-2. Define deterministic scenario data for the warehouses.
-3. Define agent state and action models.
-4. Implement warehouse HTTP client.
-5. Implement catalogue observation.
-6. Implement conflict detection.
-7. Define evidence and decision rules.
-8. Implement planning.
-9. Implement safe execution.
-10. Implement verification and replanning.
-11. Implement deterministic explanations.
-12. Add cost instrumentation.
-13. Add CLI / demo presentation.
-14. Complete integration and scenario tests.
+1. Define evidence and decision rules.
+2. Implement selective event investigation.
+3. Implement planning.
+4. Implement safe execution.
+5. Implement verification and replanning.
+6. Implement deterministic explanations.
+7. Complete write-path integration and scenario tests.
+8. Refine the final CLI / demo presentation.
 ```
 
 ---

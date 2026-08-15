@@ -6,6 +6,19 @@ The reconciliation agent must report the operational cost of each run in a concr
 
 Cost tracking should measure every warehouse API interaction automatically so the agent can explain not only what it did, but what that run cost in requests, latency, and transferred data.
 
+## V1 Implementation Status
+
+The read-only V1 agent now records every catalogue request through the
+instrumented `WarehouseClient`. Each run owns its own in-memory metric recorder,
+and aggregate request counts, GET/PUT counts, catalogue queries, payload bytes,
+API latency, failures, and wall-clock time are derived from the individual call
+records.
+
+Failed HTTP and connection attempts are retained as metrics. V1 has no write
+method, so its PUT count naturally remains zero. Metrics currently represent
+application-level request and response body bytes, excluding headers and network
+protocol overhead.
+
 The cost system should be designed so that individual agent components do not manually record metrics. Instead, all warehouse HTTP traffic should pass through one instrumented client layer.
 
 ---

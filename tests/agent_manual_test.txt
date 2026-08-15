@@ -1,0 +1,83 @@
+INVENTORY RECONCILIATION AGENT — V1
+FIRST READ CHECK
+
+[OBSERVE]
+
+warehouse-a
+  products: 10
+  status: healthy
+
+warehouse-b
+  products: 10
+  status: healthy
+
+warehouse-c
+  products: 10
+  status: healthy
+
+
+[ANALYSE]
+
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+
+SKU-001 — CONFLICT
+
+Conflict types:
+  - inventory_mismatch
+  - version_mismatch
+  - event_progress_mismatch
+
+warehouse-a
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+warehouse-b
+  on_hand: 100
+  reserved: 8
+  available: 92
+  version: 41
+  event_cursor: 1041
+
+warehouse-c
+  on_hand: 120
+  reserved: 8
+  available: 112
+  version: 42
+  event_cursor: 1042
+
+
+[COST]
+
+API calls: 3
+Successful: 3
+Failed: 0
+
+GET: 3
+PUT: 0
+
+Response bytes: 24,494
+Total API latency: 56.44 ms
+Wall-clock time: 89.82 ms
+
+
+[EXPECTED V1 RESULT]
+
+PASS
+
+- All 3 warehouses were observed successfully.
+- All 10 products were discovered.
+- Exactly 9 products were consistent.
+- Exactly 1 product conflict was detected.
+- SKU-001 was the only conflicting SKU.
+- The conflict was correctly classified as:
+  - inventory_mismatch
+  - version_mismatch
+  - event_progress_mismatch
+- No warehouse writes were performed.
+- V1 remained read-only.

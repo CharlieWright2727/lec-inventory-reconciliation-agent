@@ -31,12 +31,21 @@ Implemented:
 - validated, version-aware inventory updates with optimistic concurrency;
 - a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
 - deterministic scenario loading, including the `one-stale-warehouse` scenario;
+- a read-only V1 agent that observes warehouse catalogues concurrently;
+- structured run, observation, product, conflict, and API-cost models;
+- factual cross-warehouse conflict detection and a command-line run summary;
 - focused warehouse API tests.
 
 Not yet implemented:
 
-- the reconciliation agent and its decision logic;
-- cost instrumentation;
-- a CLI demonstration runner.
+- evidence interpretation and stale-replica determination;
+- reconciliation decisions, planning, writes, and verification;
+- event-history investigation by the agent.
 
 The three warehouse containers share one implementation and image while using separate identities and independent in-memory state.
+
+With the warehouses running, execute the read-only agent with:
+
+```bash
+python -m agent.runner
+```
