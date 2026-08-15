@@ -1,0 +1,349 @@
+INVENTORY RECONCILIATION AGENT — V2 MANUAL TESTS
+=================================================
+
+Purpose
+-------
+Validate the V2 agent across all three deterministic scenarios.
+
+V2 should:
+- observe all three warehouses;
+- detect the SKU conflict;
+- extract evidence;
+- choose RECONCILE or INVESTIGATE from the evidence;
+- selectively query event history when needed;
+- reassess after investigation;
+- remain read-only;
+- report actual API cost.
+
+All tests below were run manually against the Dockerized warehouse APIs.
+
+
+TEST 1 — ONE STALE WAREHOUSE
+============================
+
+Scenario
+--------
+Default Compose scenario: one-stale-warehouse
+
+Warehouse state for SKU-001:
+- warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+- warehouse-b: on_hand 100, reserved 8, available 92, version 41, cursor 1041
+- warehouse-c: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+
+Expected V2 behaviour
+---------------------
+- Detect one conflict: SKU-001.
+- Recognise that warehouse-a and warehouse-c agree.
+- Recognise that warehouse-b is behind in version and event progress.
+- Decide RECONCILE warehouse-b without spending extra API calls on event history.
+- Perform no PUT requests because V2 is read-only.
+
+Run command
+-----------
+docker compose up --build -d
+
+until curl -sf http://localhost:8001/health >/dev/null \
+  && curl -sf http://localhost:8002/health >/dev/null \
+  && curl -sf http://localhost:8003/health >/dev/null
+do
+  echo "Waiting for warehouse APIs..."
+  sleep 1
+done
+
+.venv/bin/python -m agent.runner
+
+docker compose down
+
+Observed result
+---------------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+- SKU-001
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Evidence:
+- warehouse-a and warehouse-c agree on inventory, revision 42, event cursor 1042, and latest event.
+- warehouse-b version 41 is behind the agreed version 42.
+- warehouse-b event cursor 1041 is behind the agreed event cursor 1042.
+
+Decision:
+RECONCILE
+
+Reason:
+Independent warehouses agree on inventory, revision, and event progress while the target is strictly behind in both.
+
+Canonical source:
+warehouse-a
+
+Target:
+warehouse-b
+
+Investigation:
+None
+
+Cost:
+- API calls: 3
+- Successful: 3
+- Failed: 0
+- GET: 3
+- PUT: 0
+- Catalogue observation calls: 3
+- Event investigation calls: 0
+- Response bytes: 24494
+- Total API latency: 43.00 ms
+- Wall-clock time: 79.32 ms
+
+Result:
+PASS
+
+The agent correctly resolved the evidence at catalogue-observation cost only and did not make unnecessary event-history calls.
+
+
+TEST 2 — NEWER SINGLETON
+========================
+
+Scenario
+--------
+newer-singleton
+
+Warehouse state for SKU-001:
+- warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+- warehouse-b: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+- warehouse-c: on_hand 105, reserved 8, available 97, version 43, cursor 1043
+
+Expected V2 behaviour
+---------------------
+- Detect one conflict: SKU-001.
+- Recognise that warehouse-a and warehouse-b agree.
+- Refuse to overwrite warehouse-c merely because it is the minority.
+- Recognise that warehouse-c is logically newer.
+- Decide INVESTIGATE.
+- Query warehouse-c event history only.
+- Verify that evt-1043 explains the newer state.
+- Reassess and decide RECONCILE warehouse-a and warehouse-b forward toward warehouse-c.
+- Perform no PUT requests because V2 is read-only.
+
+Run command
+-----------
+docker compose \
+  -f compose.yaml \
+  -f compose.newer-singleton.yaml \
+  up --build -d
+
+until curl -sf http://localhost:8001/health >/dev/null \
+  && curl -sf http://localhost:8002/health >/dev/null \
+  && curl -sf http://localhost:8003/health >/dev/null
+do
+  echo "Waiting for warehouse APIs..."
+  sleep 1
+done
+
+.venv/bin/python -m agent.runner
+
+docker compose \
+  -f compose.yaml \
+  -f compose.newer-singleton.yaml \
+  down
+
+Observed result
+---------------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+- SKU-001
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Initial evidence:
+- warehouse-c version 43 is ahead of the agreed version 42.
+- warehouse-c event cursor 1043 is ahead of the agreed event cursor 1042.
+
+Initial decision:
+INVESTIGATE
+
+Reason:
+The differing warehouse is newer and must not be overwritten by consensus without causal evidence.
+
+Plan:
+1. GET warehouse-c /inventory/SKU-001/events
+
+Investigation result:
+- warehouse-c SKU-001 event history retrieved.
+- Events after evt-1042 derive on_hand 105 and explain the newer state.
+
+Reassessed decision:
+RECONCILE
+
+Reason:
+The newer warehouse history contains the known event tip and subsequent events explain its materialised state.
+
+Canonical source:
+warehouse-c
+
+Targets:
+- warehouse-a
+- warehouse-b
+
+Cost:
+- API calls: 4
+- Successful: 4
+- Failed: 0
+- GET: 4
+- PUT: 0
+- Catalogue observation calls: 3
+- Event investigation calls: 1
+- Response bytes: 25073
+- Total API latency: 44.35 ms
+- Wall-clock time: 72.98 ms
+
+Result:
+PASS
+
+The agent correctly avoided majority-only reconciliation, spent one targeted investigation call, used causal event evidence, and changed its decision after reassessment.
+
+
+TEST 3 — SAME VERSION DIVERGENCE
+================================
+
+Scenario
+--------
+same-version-divergence
+
+Warehouse state for SKU-001:
+- warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+- warehouse-b: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+- warehouse-c: on_hand 115, reserved 8, available 107, version 42, cursor 1042
+
+Expected V2 behaviour
+---------------------
+- Detect one conflict: SKU-001.
+- Detect inventory_mismatch only.
+- Recognise that recency cannot choose a canonical state because versions and cursors are identical.
+- Decide INVESTIGATE.
+- Query event history for SKU-001 from all three warehouses.
+- Replay the complete histories.
+- Determine that the common event history derives on_hand 120.
+- Identify warehouse-c as the unsupported materialised state.
+- Reassess and decide RECONCILE warehouse-c.
+- Perform no PUT requests because V2 is read-only.
+
+Run command
+-----------
+docker compose \
+  -f compose.yaml \
+  -f compose.same-version-divergence.yaml \
+  up --build -d
+
+until curl -sf http://localhost:8001/health >/dev/null \
+  && curl -sf http://localhost:8002/health >/dev/null \
+  && curl -sf http://localhost:8003/health >/dev/null
+do
+  echo "Waiting for warehouse APIs..."
+  sleep 1
+done
+
+.venv/bin/python -m agent.runner
+
+docker compose \
+  -f compose.yaml \
+  -f compose.same-version-divergence.yaml \
+  down
+
+Observed result
+---------------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+- SKU-001
+- inventory_mismatch
+
+Initial evidence:
+- Materialised inventory differs even though logical version and event cursor agree.
+
+Initial decision:
+INVESTIGATE
+
+Reason:
+Inventory diverges at identical logical progress, so recency cannot select a canonical state.
+
+Plan:
+1. GET warehouse-a /inventory/SKU-001/events
+2. GET warehouse-b /inventory/SKU-001/events
+3. GET warehouse-c /inventory/SKU-001/events
+
+Investigation result:
+- warehouse-a SKU-001 event history retrieved.
+- warehouse-b SKU-001 event history retrieved.
+- warehouse-c SKU-001 event history retrieved.
+- Complete event replay derives on_hand 120; warehouse-a observed on_hand is 120.
+- Complete event replay derives on_hand 120; warehouse-b observed on_hand is 120.
+- Complete event replay derives on_hand 120; warehouse-c observed on_hand is 115.
+- All investigated warehouses report the same causal history.
+
+Reassessed decision:
+RECONCILE
+
+Reason:
+The warehouses share one complete causal history; replay supports one materialised state and contradicts the target.
+
+Canonical source:
+warehouse-a
+
+Target:
+warehouse-c
+
+Cost:
+- API calls: 6
+- Successful: 6
+- Failed: 0
+- GET: 6
+- PUT: 0
+- Catalogue observation calls: 3
+- Event investigation calls: 3
+- Response bytes: 25695
+- Total API latency: 48.58 ms
+- Wall-clock time: 72.03 ms
+
+Result:
+PASS
+
+The agent correctly recognised that version evidence was insufficient, gathered causal evidence only for the conflicting SKU, and used replayed event history to identify the unsupported state.
+
+
+OVERALL V2 MANUAL TEST RESULT
+=============================
+
+PASS — all three scenarios behaved as intended.
+
+Scenario                  Initial decision   Investigation calls   Final decision                PUTs
+------------------------  -----------------  --------------------  ----------------------------  ----
+one-stale-warehouse       RECONCILE          0                     RECONCILE warehouse-b          0
+newer-singleton           INVESTIGATE        1                     RECONCILE warehouse-a/b        0
+same-version-divergence   INVESTIGATE        3                     RECONCILE warehouse-c          0
+
+Key V2 behaviours confirmed
+---------------------------
+- Three independent warehouse APIs are observed successfully.
+- Consistent SKUs do not trigger unnecessary investigation.
+- The agent does not rely on blind majority voting.
+- A newer minority state is investigated rather than overwritten.
+- Same-version divergence triggers causal event-history investigation.
+- Investigation plans differ dynamically based on observed evidence.
+- The agent reassesses after obtaining new evidence.
+- API cost increases only when extra evidence is required.
+- All V2 runs remain read-only.
+- PUT count remains zero in every scenario.
+
+Next stage
+----------
+V3 should turn the final RECONCILE decisions into safe, explicit write plans, execute warehouse updates, verify the resulting state, and perform a final consistency check.

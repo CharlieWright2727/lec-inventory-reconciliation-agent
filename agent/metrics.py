@@ -61,6 +61,13 @@ class RunMetrics(BaseModel):
 
     @computed_field
     @property
+    def event_investigation_queries(self) -> int:
+        return sum(
+            metric.purpose == "event_investigation" for metric in self.api_calls
+        )
+
+    @computed_field
+    @property
     def total_request_bytes(self) -> int:
         return sum(metric.request_bytes for metric in self.api_calls)
 

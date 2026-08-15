@@ -34,13 +34,19 @@ Implemented:
 - a read-only V1 agent that observes warehouse catalogues concurrently;
 - structured run, observation, product, conflict, and API-cost models;
 - factual cross-warehouse conflict detection and a command-line run summary;
+- a read-only V2 evidence, policy, and selective investigation loop;
+- deterministic stale-replica, newer-minority, and same-progress decisions;
+- dynamically planned, instrumented SKU event-history investigation;
 - focused warehouse API tests.
 
 Not yet implemented:
 
-- evidence interpretation and stale-replica determination;
-- reconciliation decisions, planning, writes, and verification;
-- event-history investigation by the agent.
+- reconciliation writes and post-write verification;
+- safe execution semantics for same-version materialised-state correction.
+
+V2 determines what should happen but deliberately does not mutate warehouses.
+Its `RECONCILE` result is a recommendation that V3 can later validate, execute,
+and verify.
 
 The three warehouse containers share one implementation and image while using separate identities and independent in-memory state.
 
@@ -69,9 +75,9 @@ docker compose \
   up --build
 ```
 
-V1 only detects and reports the conflict. A forthcoming decision layer is
-expected to classify this pattern as requiring investigation. Selective event
-history queries can later provide additional evidence at additional API cost.
+V2 initially classifies this pattern as `INVESTIGATE`, selectively queries only
+Warehouse C's `SKU-001` event history, and recommends reconciling A and B forward
+when the additional event is shown to explain C's state.
 
 `same-version-divergence` gives all three warehouses version 42, event cursor
 1042, and the same event history, but Warehouse C contains a different
@@ -89,7 +95,11 @@ docker compose \
   up --build
 ```
 
-V1 currently reports the inventory mismatch and stops. A future evidence layer
-should investigate event history only for the conflicting SKU. This scenario
-intentionally creates a case where spending additional API cost produces
-materially better evidence and lowers reconciliation risk.
+V2 investigates event history only for the conflicting SKU. Shared complete
+history derives 120 units and identifies Warehouse C's materialised value as
+unsupported. This intentionally demonstrates a case where additional API cost
+produces materially better evidence and lowers reconciliation risk.
+
+The original catalogue-only API remains available as `run_agent()`. The V2 API
+is `run_agent_v2()`, and `python -m agent.runner` runs V2 for the demonstration
+CLI. See `md/agent/agent_v2.md` for the evidence and decision rules.
