@@ -1,0 +1,12 @@
+services:
+  warehouse-a:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/newer-singleton/warehouse-a.json
+
+  warehouse-b:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/newer-singleton/warehouse-b.json
+
+  warehouse-c:
+    environment:
+      SCENARIO_DATA_PATH: /app/scenarios/newer-singleton/warehouse-c.json

@@ -26,7 +26,7 @@ from warehouse.store import WarehouseStore
 
 ROOT = Path(__file__).parents[1]
 PRODUCTS_PATH = ROOT / "warehouse" / "data" / "products.json"
-SCENARIO_DIR = ROOT / "scenarios" / "one-stale-warehouse"
+SCENARIOS_ROOT = ROOT / "scenarios"
 NOW = datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc)
 
 
@@ -68,10 +68,12 @@ def detect_for_records(records: dict[str, object]):
 def catalogue_payload(
     warehouse_id: str,
     *,
-    scenario: bool = False,
+    scenario_name: str | None = None,
 ) -> dict:
     scenario_path = (
-        SCENARIO_DIR / f"{warehouse_id}.json" if scenario else None
+        SCENARIOS_ROOT / scenario_name / f"{warehouse_id}.json"
+        if scenario_name
+        else None
     )
     store = WarehouseStore(
         warehouse_id,
@@ -319,7 +321,35 @@ def test_runner_marks_an_incomplete_warehouse_view_as_failed() -> None:
     assert state.metrics.failed_calls == 1
 
 
-def test_runner_detects_the_scenario_read_only_through_catalogue_apis() -> None:
+@pytest.mark.parametrize(
+    ("scenario_name", "expected_conflict_types"),
+    [
+        (
+            "one-stale-warehouse",
+            [
+                ConflictType.INVENTORY_MISMATCH,
+                ConflictType.VERSION_MISMATCH,
+                ConflictType.EVENT_PROGRESS_MISMATCH,
+            ],
+        ),
+        (
+            "newer-singleton",
+            [
+                ConflictType.INVENTORY_MISMATCH,
+                ConflictType.VERSION_MISMATCH,
+                ConflictType.EVENT_PROGRESS_MISMATCH,
+            ],
+        ),
+        (
+            "same-version-divergence",
+            [ConflictType.INVENTORY_MISMATCH],
+        ),
+    ],
+)
+def test_runner_detects_scenarios_read_only_through_catalogue_apis(
+    scenario_name: str,
+    expected_conflict_types: list[ConflictType],
+) -> None:
     warehouse_endpoints = endpoints()
     requests: list[tuple[str, str]] = []
 
@@ -328,7 +358,7 @@ def test_runner_detects_the_scenario_read_only_through_catalogue_apis() -> None:
         requests.append((request.method, request.url.path))
         return httpx.Response(
             200,
-            json=catalogue_payload(warehouse_id, scenario=True),
+            json=catalogue_payload(warehouse_id, scenario_name=scenario_name),
         )
 
     async def exercise() -> RunState:
@@ -344,11 +374,7 @@ def test_runner_detects_the_scenario_read_only_through_catalogue_apis() -> None:
     assert len(state.products) == 10
     assert len(state.consistent_skus) == 9
     assert list(state.conflicts) == ["SKU-001"]
-    assert state.conflicts["SKU-001"].conflict_types == [
-        ConflictType.INVENTORY_MISMATCH,
-        ConflictType.VERSION_MISMATCH,
-        ConflictType.EVENT_PROGRESS_MISMATCH,
-    ]
+    assert state.conflicts["SKU-001"].conflict_types == expected_conflict_types
     assert requests == [("GET", "/inventory")] * 3
     assert state.metrics.total_api_calls == 3
     assert state.metrics.put_calls == 0

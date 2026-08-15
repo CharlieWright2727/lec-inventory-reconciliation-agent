@@ -1,0 +1,33 @@
+{
+  "scenario": "newer-singleton",
+  "product_count": 10,
+  "consistent_sku_count": 9,
+  "conflicting_skus": [
+    "SKU-001"
+  ],
+  "sku_001": {
+    "agreed_warehouses": [
+      "warehouse-a",
+      "warehouse-b"
+    ],
+    "newer_singleton": "warehouse-c",
+    "majority_state": {
+      "version": 42,
+      "on_hand": 120,
+      "reserved": 8,
+      "available": 112,
+      "event_cursor": 1042
+    },
+    "newer_singleton_state": {
+      "version": 43,
+      "on_hand": 105,
+      "reserved": 8,
+      "available": 97,
+      "event_cursor": 1043
+    },
+    "intended_v2_disposition": "INVESTIGATE",
+    "safe_canonical_state_established": false,
+    "warehouse_writes_expected": 0,
+    "must_not_reconcile_newer_singleton_backward": true
+  }
+}

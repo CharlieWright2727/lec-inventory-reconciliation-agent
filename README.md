@@ -30,7 +30,7 @@ Implemented:
 - catalogue, targeted SKU, and SKU-specific event-history reads;
 - validated, version-aware inventory updates with optimistic concurrency;
 - a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
-- deterministic scenario loading, including the `one-stale-warehouse` scenario;
+- deterministic scenario loading for three warehouse conflict scenarios;
 - a read-only V1 agent that observes warehouse catalogues concurrently;
 - structured run, observation, product, conflict, and API-cost models;
 - factual cross-warehouse conflict detection and a command-line run summary;
@@ -49,3 +49,47 @@ With the warehouses running, execute the read-only agent with:
 ```bash
 python -m agent.runner
 ```
+
+## Deterministic scenarios
+
+`one-stale-warehouse` is the default Docker Compose scenario. Warehouse A and C
+agree on revision 42 while Warehouse B remains on revision 41.
+
+`newer-singleton` presents a different safety case: Warehouse A and B agree on
+revision 42 while the healthy, internally valid Warehouse C reports revision 43.
+This tests whether the future decision layer avoids blindly applying majority
+consensus when the minority may contain newer legitimate data.
+
+Start `newer-singleton` with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.newer-singleton.yaml \
+  up --build
+```
+
+V1 only detects and reports the conflict. A forthcoming decision layer is
+expected to classify this pattern as requiring investigation. Selective event
+history queries can later provide additional evidence at additional API cost.
+
+`same-version-divergence` gives all three warehouses version 42, event cursor
+1042, and the same event history, but Warehouse C contains a different
+materialised inventory value. Recency and latest-version comparison therefore
+cannot identify the supported state. Majority agreement is useful evidence, but
+event history provides the stronger causal explanation: the shared events imply
+120 units, while C reports 115 without an event explaining the difference.
+
+Start `same-version-divergence` with:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.same-version-divergence.yaml \
+  up --build
+```
+
+V1 currently reports the inventory mismatch and stops. A future evidence layer
+should investigate event history only for the conflicting SKU. This scenario
+intentionally creates a case where spending additional API cost produces
+materially better evidence and lowers reconciliation risk.
