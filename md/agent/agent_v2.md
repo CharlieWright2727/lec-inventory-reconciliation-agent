@@ -106,8 +106,7 @@ of safer reasoning visible.
 
 ## V3 boundary
 
-V3 will add validated write planning, optimistic-concurrency execution,
-verification reads, and a final consistency check. V2 contains no PUT path, no
-repair endpoint, and no mutation retry loop. In particular, same-version
-correction semantics remain an explicit architectural issue for V3 because the
-warehouse API currently rejects different inventory at an unchanged revision.
+V2 contains no PUT path and remains the programmatic dry-run option. V3 is
+implemented as a separate layer that consumes V2's final decisions, adds
+validated write planning, optimistic-concurrency execution, forward repair
+revisions, and independent verification. See `agent_v3.md`.

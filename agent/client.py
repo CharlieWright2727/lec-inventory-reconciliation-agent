@@ -1,4 +1,4 @@
-"""Instrumented asynchronous HTTP client for read-only warehouse calls."""
+"""Instrumented asynchronous HTTP client for controlled warehouse calls."""
 
 import time
 from datetime import datetime, timezone
@@ -9,7 +9,13 @@ from pydantic import ValidationError
 
 from agent.metrics import ApiCallMetric, MetricRecorder
 from agent.models import WarehouseEndpoint
-from warehouse.models import CatalogueResponse, EventHistoryResponse
+from warehouse.models import (
+    CatalogueResponse,
+    EventHistoryResponse,
+    InventoryResponse,
+    InventoryUpdateRequest,
+    InventoryUpdateResponse,
+)
 
 
 class WarehouseClientError(RuntimeError):
@@ -21,7 +27,7 @@ class WarehouseClientError(RuntimeError):
 
 
 class WarehouseClient:
-    """Controlled read-only interface used by observation and reasoning."""
+    """Controlled interface used by observation, execution, and verification."""
 
     def __init__(
         self,
@@ -161,3 +167,149 @@ class WarehouseClient:
             )
 
         return history
+
+    async def get_inventory(
+        self,
+        endpoint: WarehouseEndpoint,
+        sku: str,
+        *,
+        run_id: str,
+    ) -> InventoryResponse:
+        path = f"/inventory/{sku}"
+        started_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        status_code: int | None = None
+        response_bytes = 0
+        error_type: str | None = None
+
+        try:
+            response = await self._http_client.get(f"{endpoint.base_url}{path}")
+            status_code = response.status_code
+            response_bytes = len(response.content)
+            response.raise_for_status()
+            inventory = InventoryResponse.model_validate_json(response.content)
+            if (
+                inventory.system.id != endpoint.warehouse_id
+                or inventory.product.sku != sku
+            ):
+                raise ValueError("inventory identity does not match request")
+        except httpx.HTTPStatusError as exc:
+            error_type = "http_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id,
+                error_type,
+                f"HTTP {exc.response.status_code}",
+            ) from exc
+        except httpx.TimeoutException as exc:
+            error_type = "timeout"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, str(exc) or "request timed out"
+            ) from exc
+        except httpx.RequestError as exc:
+            error_type = "connection_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, str(exc) or "request failed"
+            ) from exc
+        except (ValidationError, ValueError) as exc:
+            error_type = "validation_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, "invalid inventory response"
+            ) from exc
+        finally:
+            latency_ms = (time.perf_counter() - started) * 1000
+            self._metrics.record(
+                ApiCallMetric(
+                    request_id=f"request-{uuid4()}",
+                    run_id=run_id,
+                    warehouse_id=endpoint.warehouse_id,
+                    method="GET",
+                    endpoint=path,
+                    purpose="verification_read",
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                    status_code=status_code,
+                    success=error_type is None,
+                    request_bytes=0,
+                    response_bytes=response_bytes,
+                    error_type=error_type,
+                )
+            )
+
+        return inventory
+
+    async def update_inventory(
+        self,
+        endpoint: WarehouseEndpoint,
+        sku: str,
+        request: InventoryUpdateRequest,
+        *,
+        run_id: str,
+    ) -> InventoryUpdateResponse:
+        path = f"/inventory/{sku}"
+        payload = request.model_dump_json().encode("utf-8")
+        started_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        status_code: int | None = None
+        response_bytes = 0
+        error_type: str | None = None
+
+        try:
+            response = await self._http_client.put(
+                f"{endpoint.base_url}{path}",
+                content=payload,
+                headers={"content-type": "application/json"},
+            )
+            status_code = response.status_code
+            response_bytes = len(response.content)
+            response.raise_for_status()
+            result = InventoryUpdateResponse.model_validate_json(response.content)
+            if (
+                result.system_id != endpoint.warehouse_id
+                or result.sku != sku
+                or result.previous_version != request.expected_current_version
+                or result.new_version != request.target_version
+            ):
+                raise ValueError("update response does not match request")
+        except httpx.HTTPStatusError as exc:
+            error_type = "http_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id,
+                error_type,
+                f"HTTP {exc.response.status_code}",
+            ) from exc
+        except httpx.TimeoutException as exc:
+            error_type = "timeout"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, str(exc) or "request timed out"
+            ) from exc
+        except httpx.RequestError as exc:
+            error_type = "connection_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, str(exc) or "request failed"
+            ) from exc
+        except (ValidationError, ValueError) as exc:
+            error_type = "validation_error"
+            raise WarehouseClientError(
+                endpoint.warehouse_id, error_type, "invalid update response"
+            ) from exc
+        finally:
+            latency_ms = (time.perf_counter() - started) * 1000
+            self._metrics.record(
+                ApiCallMetric(
+                    request_id=f"request-{uuid4()}",
+                    run_id=run_id,
+                    warehouse_id=endpoint.warehouse_id,
+                    method="PUT",
+                    endpoint=path,
+                    purpose="reconciliation_write",
+                    started_at=started_at,
+                    latency_ms=latency_ms,
+                    status_code=status_code,
+                    success=error_type is None,
+                    request_bytes=len(payload),
+                    response_bytes=response_bytes,
+                    error_type=error_type,
+                )
+            )
+
+        return result

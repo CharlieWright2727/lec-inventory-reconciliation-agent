@@ -15,11 +15,21 @@ The agent will:
 - update affected warehouse systems;
 - measure and report the cost of the synchronisation process, including metrics such as API calls, latency and data transferred.
 
-## Planned approach
+## Reconciliation strategy
 
-The project will simulate multiple independent inventory systems through local APIs. A reconciliation agent will inspect their inventory state, determine whether conflicting records can safely be resolved, execute any required updates, verify the resulting state and produce an auditable cost report.
+The project simulates independent inventory systems through local APIs. The
+agent observes their catalogues, detects factual conflicts, interprets typed
+evidence, selectively investigates causal event history, plans and safety-checks
+writes, executes with optimistic concurrency, and independently verifies the
+result.
 
-The exact reconciliation strategy and architecture will be developed as part of the assessment.
+The strategy deliberately avoids blind majority voting: two matching replicas
+can both be behind a legitimate newer minority. It also avoids latest timestamp
+only, averaging stock values, and fixed source priority because none proves how
+a state arose. Instead it uses consensus plus logical progress for obvious stale
+replicas, causal event evidence for ambiguous conflicts, forward repair revisions
+instead of rewriting historical versions, mandatory post-write verification,
+and escalation rather than guessing.
 
 ## Current status
 
@@ -37,23 +47,23 @@ Implemented:
 - a read-only V2 evidence, policy, and selective investigation loop;
 - deterministic stale-replica, newer-minority, and same-progress decisions;
 - dynamically planned, instrumented SKU event-history investigation;
+- typed V3 reconciliation plans and whole-plan safety validation;
+- sequential optimistic-concurrency writes with partial-failure audit trails;
+- shared forward repair revisions for same-version divergence;
+- independent targeted verification using the original conflict detector;
+- explicit per-SKU `RESOLVED`, `NO_ACTION`, or `ESCALATED` outcomes;
+- request-purpose, latency, exact PUT-byte, response-byte, and transfer metrics;
 - focused warehouse API tests.
 
-Not yet implemented:
-
-- reconciliation writes and post-write verification;
-- safe execution semantics for same-version materialised-state correction.
-
-V2 determines what should happen but deliberately does not mutate warehouses.
-Its `RECONCILE` result is a recommendation that V3 can later validate, execute,
-and verify.
+V3 completes the core reconciliation lifecycle. V2 remains available as a
+read-only dry-run API.
 
 The three warehouse containers share one implementation and image while using separate identities and independent in-memory state.
 
-With the warehouses running, execute the read-only agent with:
+With the warehouses running, execute V3 with:
 
 ```bash
-python -m agent.runner
+.venv/bin/python -m agent.runner
 ```
 
 ## Deterministic scenarios
@@ -75,9 +85,9 @@ docker compose \
   up --build
 ```
 
-V2 initially classifies this pattern as `INVESTIGATE`, selectively queries only
-Warehouse C's `SKU-001` event history, and recommends reconciling A and B forward
-when the additional event is shown to explain C's state.
+V3 initially classifies this pattern as `INVESTIGATE`, selectively queries only
+Warehouse C's `SKU-001` event history, writes A and B forward when the additional
+event explains C's state, and verifies all three warehouses.
 
 `same-version-divergence` gives all three warehouses version 42, event cursor
 1042, and the same event history, but Warehouse C contains a different
@@ -95,11 +105,11 @@ docker compose \
   up --build
 ```
 
-V2 investigates event history only for the conflicting SKU. Shared complete
+V3 investigates event history only for the conflicting SKU. Shared complete
 history derives 120 units and identifies Warehouse C's materialised value as
-unsupported. This intentionally demonstrates a case where additional API cost
-produces materially better evidence and lowers reconciliation risk.
+unsupported. It then advances A, B, and C to one repair revision and verifies the
+new shared state.
 
-The original catalogue-only API remains available as `run_agent()`. The V2 API
-is `run_agent_v2()`, and `python -m agent.runner` runs V2 for the demonstration
-CLI. See `md/agent/agent_v2.md` for the evidence and decision rules.
+The catalogue-only API remains `run_agent()`, V2 dry-run reasoning remains
+`run_agent_v2()`, and full reconciliation is `run_agent_v3()`. The CLI runs V3.
+See `md/agent/agent_v2.md` and `md/agent/agent_v3.md` for the complete design.

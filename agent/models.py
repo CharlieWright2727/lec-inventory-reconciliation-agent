@@ -1,4 +1,4 @@
-"""Structured state models for the read-only reconciliation agent."""
+"""Structured state models for all reconciliation agent versions."""
 
 from datetime import datetime
 from enum import Enum
@@ -7,7 +7,13 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent.metrics import RunMetrics
-from warehouse.models import EventHistoryResponse, Inventory, InventoryRecord
+from warehouse.models import (
+    EventHistoryResponse,
+    Inventory,
+    InventoryRecord,
+    InventoryUpdateResponse,
+    UpdateSource,
+)
 
 
 class WarehouseEndpoint(BaseModel):
@@ -164,19 +170,95 @@ class InvestigationPlan(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class UpdateInventoryAction(BaseModel):
+    action_id: str = Field(min_length=1)
+    warehouse_id: str = Field(min_length=1)
+    sku: str = Field(min_length=1)
+    expected_current_version: int = Field(ge=0)
+    target_version: int = Field(ge=0)
+    inventory: Inventory
+    source: UpdateSource
+    reason: str = Field(min_length=1)
+
+
+class ReconciliationPlan(BaseModel):
+    sku: str = Field(min_length=1)
+    canonical_source: str = Field(min_length=1)
+    target_inventory: Inventory
+    target_version: int = Field(ge=0)
+    participating_warehouses: list[str] = Field(min_length=1)
+    repair_revision: bool = False
+    reason: str = Field(min_length=1)
+    actions: list[UpdateInventoryAction] = Field(min_length=1)
+
+
+class SafetyCheck(BaseModel):
+    name: str = Field(min_length=1)
+    passed: bool
+    detail: str = Field(min_length=1)
+    action_id: str | None = None
+
+
+class SafetyValidationResult(BaseModel):
+    sku: str = Field(min_length=1)
+    safe: bool
+    checks: list[SafetyCheck] = Field(default_factory=list)
+    rejection_reason: str | None = None
+
+
+class ExecutionStatus(str, Enum):
+    SUCCESS = "success"
+    UNCHANGED = "unchanged"
+    REJECTED = "rejected"
+    FAILED = "failed"
+
+
+class ExecutionResult(BaseModel):
+    action_id: str = Field(min_length=1)
+    warehouse_id: str = Field(min_length=1)
+    sku: str = Field(min_length=1)
+    status: ExecutionStatus
+    expected_version: int = Field(ge=0)
+    target_version: int = Field(ge=0)
+    response: InventoryUpdateResponse | None = None
+    error: str | None = None
+
+
+class VerificationResult(BaseModel):
+    sku: str = Field(min_length=1)
+    verified: bool
+    warehouse_records: dict[str, InventoryRecord] = Field(default_factory=dict)
+    expected_inventory: Inventory
+    expected_version: int = Field(ge=0)
+    missing_warehouses: list[str] = Field(default_factory=list)
+    remaining_conflict_types: list[ConflictType] = Field(default_factory=list)
+    reason: str = Field(min_length=1)
+
+
+class ResolutionOutcome(str, Enum):
+    RESOLVED = "RESOLVED"
+    NO_ACTION = "NO_ACTION"
+    ESCALATED = "ESCALATED"
+    FAILED = "FAILED"
+
+
 class RunStatus(str, Enum):
     STARTING = "starting"
     OBSERVING = "observing"
     ANALYSING = "analysing"
     INVESTIGATING = "investigating"
     REASSESSING = "reassessing"
+    PLANNING = "planning"
+    VALIDATING = "validating"
+    EXECUTING = "executing"
+    VERIFYING = "verifying"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 class RunState(BaseModel):
     run_id: str = Field(min_length=1)
-    agent_version: int = Field(default=1, ge=1, le=2)
+    agent_version: int = Field(default=1, ge=1, le=3)
     started_at: datetime
     completed_at: datetime | None = None
     status: RunStatus
@@ -195,5 +277,18 @@ class RunState(BaseModel):
     )
     plans: dict[str, InvestigationPlan] = Field(default_factory=dict)
     investigation_errors: dict[str, str] = Field(default_factory=dict)
+    reconciliation_plans: dict[str, ReconciliationPlan] = Field(
+        default_factory=dict
+    )
+    safety_results: dict[str, SafetyValidationResult] = Field(
+        default_factory=dict
+    )
+    execution_results: dict[str, list[ExecutionResult]] = Field(
+        default_factory=dict
+    )
+    verification_results: dict[str, VerificationResult] = Field(
+        default_factory=dict
+    )
+    resolutions: dict[str, ResolutionOutcome] = Field(default_factory=dict)
     observation_errors: dict[str, str] = Field(default_factory=dict)
     metrics: RunMetrics = Field(default_factory=RunMetrics)

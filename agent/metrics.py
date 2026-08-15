@@ -68,6 +68,20 @@ class RunMetrics(BaseModel):
 
     @computed_field
     @property
+    def reconciliation_writes(self) -> int:
+        return sum(
+            metric.purpose == "reconciliation_write" for metric in self.api_calls
+        )
+
+    @computed_field
+    @property
+    def verification_reads(self) -> int:
+        return sum(
+            metric.purpose == "verification_read" for metric in self.api_calls
+        )
+
+    @computed_field
+    @property
     def total_request_bytes(self) -> int:
         return sum(metric.request_bytes for metric in self.api_calls)
 
