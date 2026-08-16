@@ -1,0 +1,15 @@
+services:
+  warehouse-a:
+    environment:
+      SIMULATION_MODE: "true"
+      SCENARIO_DATA_PATH: ""
+
+  warehouse-b:
+    environment:
+      SIMULATION_MODE: "true"
+      SCENARIO_DATA_PATH: ""
+
+  warehouse-c:
+    environment:
+      SIMULATION_MODE: "true"
+      SCENARIO_DATA_PATH: ""

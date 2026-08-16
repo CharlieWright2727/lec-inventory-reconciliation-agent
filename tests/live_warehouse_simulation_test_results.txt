@@ -1,0 +1,667 @@
+LIVE WAREHOUSE RECONCILIATION SIMULATION — TEST RESULTS
+=========================================================
+
+Simulation seed
+---------------
+1242503841
+
+Required rounds: 5
+Executed rounds: 5
+Passed rounds: 5
+Failed rounds: 0
+
+Random execution order
+----------------------
+1. incomplete-history
+2. materialised-corruption
+3. stale-replica
+4. newer-legitimate-state
+5. competing-causal-branches
+
+Initial baseline
+----------------
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+All three warehouse APIs were healthy before the simulation began.
+
+
+1. INCOMPLETE HISTORY
+=====================
+
+Disturbance
+-----------
+Warehouse C advanced SKU-004 by +10 but exposed event history that did not
+contain the shared causal anchor.
+
+Affected SKU:
+SKU-004
+
+Affected warehouse:
+warehouse-c
+
+Observed conflict
+-----------------
+warehouse-a:
+  on_hand: 130
+  reserved: 4
+  available: 126
+  version: 41
+  event_cursor: 4
+
+warehouse-b:
+  on_hand: 130
+  reserved: 4
+  available: 126
+  version: 41
+  event_cursor: 4
+
+warehouse-c:
+  on_hand: 140
+  reserved: 4
+  available: 136
+  version: 42
+  event_cursor: 5
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Agent path
+----------
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-c /inventory/SKU-004/events
+
+Evidence:
+- event history had no explicit opening-stock anchor;
+- absolute on_hand could not be replayed;
+- history could not extend the reference warehouse event tip.
+
+Final decision:
+ESCALATE
+
+Reason:
+The gathered history was incomplete or could not explain the observed state.
+
+Reconciliation writes:
+0
+
+Expected outcome:
+ESCALATED
+
+Actual outcome:
+ESCALATED
+
+Round result:
+PASS
+
+Post-round handling
+-------------------
+Warehouse baseline reset.
+
+Reset verification:
+Products: 10
+Consistent: 10
+Conflicts: 0
+
+Cost
+----
+API calls: 4
+Successful: 4
+Failed: 0
+GET: 4
+PUT: 0
+Catalogue observations: 3
+Event investigations: 1
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 24814
+Total transferred: 24814
+API latency: 16.16 ms
+Wall-clock time: 9.08 ms
+
+
+2. MATERIALISED CORRUPTION
+==========================
+
+Disturbance
+-----------
+Warehouse C's materialised SKU-003 on_hand value was reduced by 5 without
+changing its version, event cursor, or causal history.
+
+Affected SKU:
+SKU-003
+
+Affected warehouse:
+warehouse-c
+
+Observed conflict
+-----------------
+warehouse-a:
+  on_hand: 120
+  reserved: 3
+  available: 117
+  version: 41
+  event_cursor: 3
+
+warehouse-b:
+  on_hand: 120
+  reserved: 3
+  available: 117
+  version: 41
+  event_cursor: 3
+
+warehouse-c:
+  on_hand: 115
+  reserved: 3
+  available: 112
+  version: 41
+  event_cursor: 3
+
+Conflict type:
+- inventory_mismatch
+
+Agent path
+----------
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-a /inventory/SKU-003/events
+GET warehouse-b /inventory/SKU-003/events
+GET warehouse-c /inventory/SKU-003/events
+
+Evidence:
+- complete replay derived on_hand 120 for all three histories;
+- warehouse-a observed 120;
+- warehouse-b observed 120;
+- warehouse-c observed 115;
+- all investigated warehouses shared the same causal history.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-a
+
+Repair strategy:
+Shared repair revision 42
+
+Writes:
+warehouse-a: version 41 -> 42, inventory 120 / 3 / 117
+warehouse-b: version 41 -> 42, inventory 120 / 3 / 117
+warehouse-c: version 41 -> 42, inventory 120 / 3 / 117
+
+Execution:
+All three writes SUCCESS
+
+Verification:
+warehouse-a: v42 / on_hand 120
+warehouse-b: v42 / on_hand 120
+warehouse-c: v42 / on_hand 120
+
+Remaining conflict:
+None
+
+Expected outcome:
+RESOLVED
+
+Actual outcome:
+RESOLVED
+
+Round result:
+PASS
+
+Clean-state check:
+PASS
+
+Cost
+----
+API calls: 12
+Successful: 12
+Failed: 0
+GET: 9
+PUT: 3
+Catalogue observations: 3
+Event investigations: 3
+Reconciliation writes: 3
+Verification reads: 3
+Request bytes: 975
+Response bytes: 28855
+Total transferred: 29830
+API latency: 43.59 ms
+Wall-clock time: 23.74 ms
+
+
+3. STALE REPLICA
+================
+
+Disturbance
+-----------
+Warehouse A and Warehouse C processed the same +20 external stock event for
+SKU-001 while Warehouse B missed the event.
+
+Affected SKU:
+SKU-001
+
+Warehouses that advanced:
+- warehouse-a
+- warehouse-c
+
+Observed conflict
+-----------------
+warehouse-a:
+  on_hand: 120
+  reserved: 1
+  available: 119
+  version: 42
+  event_cursor: 2
+
+warehouse-b:
+  on_hand: 100
+  reserved: 1
+  available: 99
+  version: 41
+  event_cursor: 1
+
+warehouse-c:
+  on_hand: 120
+  reserved: 1
+  available: 119
+  version: 42
+  event_cursor: 2
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Agent path
+----------
+Decision:
+RECONCILE
+
+Reason:
+Independent warehouses agreed on inventory, revision, and event progress while
+Warehouse B was strictly behind.
+
+Canonical source:
+warehouse-a
+
+Target:
+warehouse-b
+
+Event investigation calls:
+0
+
+Write:
+warehouse-b version 41 -> 42
+inventory -> 120 / 1 / 119
+
+Execution:
+SUCCESS
+
+Verification:
+warehouse-a: v42 / on_hand 120
+warehouse-b: v42 / on_hand 120
+warehouse-c: v42 / on_hand 120
+
+Remaining conflict:
+None
+
+Expected outcome:
+RESOLVED
+
+Actual outcome:
+RESOLVED
+
+Round result:
+PASS
+
+Clean-state check:
+PASS
+
+Cost
+----
+API calls: 7
+Successful: 7
+Failed: 0
+GET: 6
+PUT: 1
+Catalogue observations: 3
+Event investigations: 0
+Reconciliation writes: 1
+Verification reads: 3
+Request bytes: 300
+Response bytes: 28101
+Total transferred: 28401
+API latency: 23.05 ms
+Wall-clock time: 11.27 ms
+
+
+4. NEWER LEGITIMATE STATE
+=========================
+
+Disturbance
+-----------
+Warehouse C processed one valid +15 event for SKU-002 extending the shared
+event tip while Warehouse A and Warehouse B remained at the previous revision.
+
+Affected SKU:
+SKU-002
+
+Affected warehouse:
+warehouse-c
+
+Observed conflict
+-----------------
+warehouse-a:
+  on_hand: 110
+  reserved: 2
+  available: 108
+  version: 41
+  event_cursor: 2
+
+warehouse-b:
+  on_hand: 110
+  reserved: 2
+  available: 108
+  version: 41
+  event_cursor: 2
+
+warehouse-c:
+  on_hand: 125
+  reserved: 2
+  available: 123
+  version: 42
+  event_cursor: 3
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Agent path
+----------
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-c /inventory/SKU-002/events
+
+Evidence:
+Events after the known event tip derived on_hand 125 and explained Warehouse C's
+newer state.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-c
+
+Targets:
+- warehouse-a
+- warehouse-b
+
+Writes:
+warehouse-a version 41 -> 42, inventory 125 / 2 / 123
+warehouse-b version 41 -> 42, inventory 125 / 2 / 123
+
+Execution:
+Both writes SUCCESS
+
+Verification:
+warehouse-a: v42 / on_hand 125
+warehouse-b: v42 / on_hand 125
+warehouse-c: v42 / on_hand 125
+
+Remaining conflict:
+None
+
+Expected outcome:
+RESOLVED
+
+Actual outcome:
+RESOLVED
+
+Round result:
+PASS
+
+Clean-state check:
+PASS
+
+Cost
+----
+API calls: 9
+Successful: 9
+Failed: 0
+GET: 7
+PUT: 2
+Catalogue observations: 3
+Event investigations: 1
+Reconciliation writes: 2
+Verification reads: 3
+Request bytes: 600
+Response bytes: 28817
+Total transferred: 29417
+API latency: 28.54 ms
+Wall-clock time: 17.37 ms
+
+
+5. COMPETING CAUSAL BRANCHES
+============================
+
+Disturbance
+-----------
+Warehouse B and Warehouse C independently extended the same SKU-005 event tip
+with different valid events.
+
+Warehouse B branch:
+-10
+
+Warehouse C branch:
++10
+
+Affected SKU:
+SKU-005
+
+Affected warehouses:
+- warehouse-b
+- warehouse-c
+
+Observed conflict
+-----------------
+warehouse-a:
+  on_hand: 140
+  reserved: 5
+  available: 135
+  version: 41
+  event_cursor: 5
+
+warehouse-b:
+  on_hand: 130
+  reserved: 5
+  available: 125
+  version: 42
+  event_cursor: 6
+
+warehouse-c:
+  on_hand: 150
+  reserved: 5
+  available: 145
+  version: 42
+  event_cursor: 6
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Agent path
+----------
+Initial decision:
+INVESTIGATE
+
+Reason:
+Multiple newer states required causal investigation before a safe canonical
+state could be selected.
+
+Investigation:
+GET warehouse-b /inventory/SKU-005/events
+GET warehouse-c /inventory/SKU-005/events
+
+Evidence:
+Multiple valid event branches extended the same event tip to different supported
+states.
+
+Final decision:
+ESCALATE
+
+Reason:
+The causal histories were contradictory and automatic reconciliation was unsafe.
+
+Reconciliation writes:
+0
+
+Expected outcome:
+ESCALATED
+
+Actual outcome:
+ESCALATED
+
+Round result:
+PASS
+
+Post-round handling
+-------------------
+Warehouse baseline reset.
+
+Reset verification:
+Products: 10
+Consistent: 10
+Conflicts: 0
+
+Cost
+----
+API calls: 5
+Successful: 5
+Failed: 0
+GET: 5
+PUT: 0
+Catalogue observations: 3
+Event investigations: 2
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 26160
+Total transferred: 26160
+API latency: 17.71 ms
+Wall-clock time: 8.77 ms
+
+
+OVERALL SIMULATION RESULTS
+==========================
+
+Required rounds: 5
+Executed rounds: 5
+Passed rounds: 5
+Failed rounds: 0
+
+Automatically resolved: 3
+Safely escalated: 2
+
+Unexpected writes: 0
+Verification failures: 0
+Reset failures: 0
+
+
+ROUND SUMMARY
+=============
+
+Round                         Expected     Actual       Writes   Result
+----------------------------  -----------  -----------  -------  ------
+incomplete-history            ESCALATED    ESCALATED    0        PASS
+materialised-corruption       RESOLVED     RESOLVED     3        PASS
+stale-replica                 RESOLVED     RESOLVED     1        PASS
+newer-legitimate-state        RESOLVED     RESOLVED     2        PASS
+competing-causal-branches     ESCALATED    ESCALATED    0        PASS
+
+
+CUMULATIVE AGENT COST
+=====================
+
+Agent runs: 5
+
+API calls: 37
+Catalogue observations: 15
+Event investigations: 7
+Reconciliation writes: 6
+Verification reads: 9
+
+Request bytes: 1875
+Response bytes: 136747
+Total transferred: 138622
+
+API latency: 129.04 ms
+Wall-clock time: 70.22 ms
+
+
+SIMULATION CONTROL COST
+=======================
+
+Control API calls: 50
+Reset calls: 9
+Mutation calls: 8
+Read-only observation calls: 33
+
+Simulation-control traffic was reported separately from reconciliation-agent
+cost so external test orchestration did not inflate the measured agent cost.
+
+
+BEHAVIOURS CONFIRMED
+====================
+
+PASS — all five required disturbances executed exactly once.
+
+PASS — round order was randomised using seed 1242503841.
+
+PASS — each disturbance reached a terminal outcome before the next disturbance
+was injected.
+
+PASS — all three automatically resolvable disturbances were resolved.
+
+PASS — all resolved rounds passed verification and the clean-state check.
+
+PASS — incomplete causal history was safely escalated with zero writes.
+
+PASS — competing valid causal branches were safely escalated with zero writes.
+
+PASS — escalated environments were reset before the next round.
+
+PASS — every reset restored 10 products with 10 consistent and 0 conflicts.
+
+PASS — no unexpected reconciliation writes occurred.
+
+PASS — no verification failures occurred.
+
+PASS — no reset failures occurred.
+
+PASS — agent API cost and simulation-control cost were measured separately.
+
+
+FINAL RESULT
+============
+
+SIMULATION: PASS
+
+The live warehouse simulation successfully demonstrated that the existing V3
+reconciliation agent can operate against a changing distributed warehouse
+environment, independently identify different conflict classes, investigate only
+when necessary, reconcile safe cases, refuse unsafe mutations, verify successful
+repairs, and continue through all required disturbance types in random order.

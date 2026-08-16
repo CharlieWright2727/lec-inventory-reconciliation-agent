@@ -235,3 +235,25 @@ def test_app_instances_keep_independent_runtime_state() -> None:
 
     assert warehouse_a.get("/inventory/SKU-001").json()["state"]["version"] == 42
     assert warehouse_b.get("/inventory/SKU-001").json()["state"]["version"] == 41
+
+
+def test_simulation_routes_are_absent_in_normal_mode() -> None:
+    client = make_client()
+
+    assert client.post("/simulation/reset").status_code == 404
+    assert client.post("/simulation/inventory/SKU-001/event", json={}).status_code == 404
+
+
+def test_simulation_reset_is_available_only_when_explicitly_enabled() -> None:
+    client = TestClient(
+        create_app(warehouse_id="warehouse-test", simulation_mode=True)
+    )
+
+    response = client.post("/simulation/reset")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "reset",
+        "system_id": "warehouse-test",
+        "sku": None,
+    }

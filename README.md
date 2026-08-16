@@ -177,3 +177,40 @@ docker compose \
 The catalogue-only API remains `run_agent()`, V2 dry-run reasoning remains
 `run_agent_v2()`, and full reconciliation is `run_agent_v3()`. The CLI runs V3.
 See `md/agent/agent_v2.md` and `md/agent/agent_v3.md` for the complete design.
+
+## Live warehouse simulation
+
+The final simulation milestone runs the unchanged V3 agent against five live
+disturbances injected through guarded warehouse HTTP controls. Every disturbance
+runs exactly once in a seeded random order. V3 must resolve three safe cases and
+safely escalate two ambiguous causal cases with zero writes; the simulator then
+independently marks each round `PASS` or `FAIL` and gates the next round on a
+full clean-state check.
+
+Start the clean simulation-enabled warehouse services:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.simulation.yaml \
+  up --build -d
+```
+
+Run the simulation and optionally reproduce it with a seed:
+
+```bash
+.venv/bin/python -m simulation.runner
+.venv/bin/python -m simulation.runner --seed 81724
+```
+
+Then stop the services:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.simulation.yaml \
+  down
+```
+
+See `simulation/README.md` for the disturbance model, round gating, reset rules,
+cost separation, and optional JSON report command.

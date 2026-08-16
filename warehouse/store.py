@@ -16,6 +16,10 @@ from warehouse.models import (
     InventoryState,
     InventoryUpdateRequest,
     InventoryUpdateResponse,
+    SimulationCorruptionRequest,
+    SimulationEventRequest,
+    SimulationHistoryRequest,
+    SimulationMutationResponse,
     SyncMetadata,
     SystemHealth,
     SystemInfo,
@@ -66,6 +70,7 @@ class WarehouseStore:
             writable=writable,
             supports_version_check=True,
         )
+        self._product_data_path = product_data_path
         self._records, self._event_history = load_inventory_records(
             warehouse_id, product_data_path, scenario_data_path
         )
@@ -189,6 +194,141 @@ class WarehouseStore:
             sku=sku,
             previous_version=previous_version,
             new_version=request.target_version,
+        )
+
+    def simulation_reset(self) -> SimulationMutationResponse:
+        """Restore the one canonical clean catalogue used by live simulation."""
+        records, history = load_inventory_records(
+            self.warehouse_id,
+            self._product_data_path,
+        )
+        with self._lock:
+            self._records = records
+            self._event_history = history
+        return SimulationMutationResponse(
+            status="reset",
+            system_id=self.warehouse_id,
+        )
+
+    def simulation_apply_event(
+        self, sku: str, request: SimulationEventRequest
+    ) -> SimulationMutationResponse:
+        """Apply activity from an external inventory event processor."""
+        with self._lock:
+            current = self._record(sku)
+            if request.expected_current_version != current.state.version:
+                raise VersionConflictError(
+                    request.expected_current_version, current.state.version
+                )
+            if request.target_version != current.state.version + 1:
+                raise ValueError("external event must advance exactly one revision")
+            if any(
+                event.event_id == request.event.event_id
+                for event in self._event_history[sku]
+            ):
+                raise ValueError("event_id already exists for SKU")
+            if request.event.processed_at < current.last_event.processed_at:
+                raise ValueError("external event predates current event progress")
+
+            on_hand = current.inventory.on_hand + request.event.quantity_delta
+            inventory = current.inventory.model_copy(
+                update={
+                    "on_hand": on_hand,
+                    "available": on_hand - current.inventory.reserved,
+                }
+            )
+            # Re-validate model_copy updates because Pydantic does not do so.
+            inventory = type(current.inventory).model_validate(inventory.model_dump())
+            event_cursor = current.sync.event_cursor + 1
+            now = request.event.processed_at
+            self._records[sku] = InventoryRecord(
+                product=current.product.model_copy(deep=True),
+                inventory=inventory,
+                state=InventoryState(
+                    version=request.target_version,
+                    snapshot_id=(
+                        f"snap-{self.warehouse_id}-{sku.replace('-', '')}-"
+                        f"{request.target_version}-{event_cursor}"
+                    ),
+                    updated_at=now,
+                    updated_by=request.actor,
+                    checksum=inventory_checksum(inventory),
+                ),
+                last_event=request.event.model_copy(deep=True),
+                sync=SyncMetadata(
+                    status="up_to_date",
+                    last_successful_sync_at=now,
+                    last_synced_version=request.target_version,
+                    event_cursor=event_cursor,
+                    sync_lag_seconds=0,
+                ),
+                data_quality=DataQuality(
+                    status="valid",
+                    warnings=[],
+                    last_validated_at=now,
+                ),
+            )
+            self._event_history[sku].append(request.event.model_copy(deep=True))
+        return SimulationMutationResponse(
+            status="event_applied",
+            system_id=self.warehouse_id,
+            sku=sku,
+        )
+
+    def simulation_corrupt(
+        self, sku: str, request: SimulationCorruptionRequest
+    ) -> SimulationMutationResponse:
+        """Corrupt only materialised inventory, retaining causal progress."""
+        with self._lock:
+            current = self._record(sku)
+            if request.expected_current_version != current.state.version:
+                raise VersionConflictError(
+                    request.expected_current_version, current.state.version
+                )
+            if request.on_hand == current.inventory.on_hand:
+                raise ValueError("corruption must change on_hand")
+            inventory = type(current.inventory).model_validate(
+                {
+                    "on_hand": request.on_hand,
+                    "reserved": current.inventory.reserved,
+                    "available": request.on_hand - current.inventory.reserved,
+                }
+            )
+            self._records[sku] = current.model_copy(
+                deep=True,
+                update={
+                    "inventory": inventory,
+                    "state": current.state.model_copy(
+                        update={
+                            "updated_by": request.actor,
+                            "checksum": inventory_checksum(inventory),
+                        }
+                    ),
+                },
+            )
+        return SimulationMutationResponse(
+            status="corrupted",
+            system_id=self.warehouse_id,
+            sku=sku,
+        )
+
+    def simulation_replace_history(
+        self, sku: str, request: SimulationHistoryRequest
+    ) -> SimulationMutationResponse:
+        """Replace only the history exposed for one observed inventory record."""
+        with self._lock:
+            current = self._record(sku)
+            if request.expected_last_event_id != current.last_event.event_id:
+                raise ValueError("expected_last_event_id does not match current state")
+            if request.events[-1] != current.last_event:
+                raise ValueError("replacement history must end at current last_event")
+            self._event_history[sku] = [
+                event.model_copy(deep=True) for event in request.events
+            ]
+        return SimulationMutationResponse(
+            status="history_replaced",
+            system_id=self.warehouse_id,
+            sku=sku,
         )
 
     def _record(self, sku: str) -> InventoryRecord:

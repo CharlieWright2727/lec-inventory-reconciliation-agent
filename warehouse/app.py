@@ -13,6 +13,10 @@ from warehouse.models import (
     InventoryResponse,
     InventoryUpdateRequest,
     InventoryUpdateResponse,
+    SimulationCorruptionRequest,
+    SimulationEventRequest,
+    SimulationHistoryRequest,
+    SimulationMutationResponse,
 )
 from warehouse.store import (
     SameVersionInventoryConflictError,
@@ -33,6 +37,7 @@ def create_app(
     product_data_path: Path | None = None,
     scenario_data_path: Path | None = None,
     writable: bool = True,
+    simulation_mode: bool | None = None,
 ) -> FastAPI:
     resolved_id = warehouse_id or os.getenv("WAREHOUSE_ID", "warehouse-local")
     configured_path = os.getenv("PRODUCT_DATA_PATH")
@@ -42,6 +47,11 @@ def create_app(
     configured_scenario_path = os.getenv("SCENARIO_DATA_PATH")
     resolved_scenario_path = scenario_data_path or (
         Path(configured_scenario_path) if configured_scenario_path else None
+    )
+    resolved_simulation_mode = (
+        simulation_mode
+        if simulation_mode is not None
+        else os.getenv("SIMULATION_MODE", "").strip().lower() == "true"
     )
 
     app = FastAPI(title=f"Inventory API: {resolved_id}")
@@ -129,6 +139,56 @@ def create_app(
                 },
             )
 
+    if resolved_simulation_mode:
+
+        @app.post("/simulation/reset", response_model=SimulationMutationResponse)
+        def simulation_reset() -> SimulationMutationResponse:
+            return app.state.store.simulation_reset()
+
+        @app.post(
+            "/simulation/inventory/{sku}/event",
+            response_model=SimulationMutationResponse,
+        )
+        def simulation_event(
+            sku: str, request: SimulationEventRequest
+        ) -> SimulationMutationResponse | JSONResponse:
+            try:
+                return app.state.store.simulation_apply_event(sku, request)
+            except UnknownSkuError:
+                return _not_found(sku)
+            except VersionConflictError as exc:
+                return _simulation_conflict(str(exc))
+            except (TargetVersionError, ValueError) as exc:
+                return _simulation_conflict(str(exc))
+
+        @app.post(
+            "/simulation/inventory/{sku}/corrupt",
+            response_model=SimulationMutationResponse,
+        )
+        def simulation_corrupt(
+            sku: str, request: SimulationCorruptionRequest
+        ) -> SimulationMutationResponse | JSONResponse:
+            try:
+                return app.state.store.simulation_corrupt(sku, request)
+            except UnknownSkuError:
+                return _not_found(sku)
+            except (VersionConflictError, ValueError) as exc:
+                return _simulation_conflict(str(exc))
+
+        @app.post(
+            "/simulation/inventory/{sku}/history",
+            response_model=SimulationMutationResponse,
+        )
+        def simulation_history(
+            sku: str, request: SimulationHistoryRequest
+        ) -> SimulationMutationResponse | JSONResponse:
+            try:
+                return app.state.store.simulation_replace_history(sku, request)
+            except UnknownSkuError:
+                return _not_found(sku)
+            except ValueError as exc:
+                return _simulation_conflict(str(exc))
+
     return app
 
 
@@ -136,6 +196,13 @@ def _not_found(sku: str) -> JSONResponse:
     return JSONResponse(
         status_code=404,
         content={"detail": f"SKU not found: {sku}"},
+    )
+
+
+def _simulation_conflict(message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"status": "conflict", "message": message},
     )
 
 

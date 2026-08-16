@@ -1,0 +1,520 @@
+INVENTORY RECONCILIATION AGENT — ADDITIONAL V3 MANUAL TEST RESULTS
+==================================================================
+
+These results cover the four additional deterministic V3 scenarios:
+
+- mixed-conflicts
+- incomplete-event-history
+- competing-newer-states
+- missing-sku
+
+All runs were executed against the Docker warehouse APIs. Where a second run was
+performed, the warehouse containers were kept running so the second execution
+tested the state left by the first.
+
+
+1. MIXED CONFLICTS
+==================
+
+Initial analysis
+----------------
+Products discovered: 10
+Consistent: 7
+Conflicts: 3
+
+Conflicting SKUs:
+- SKU-001
+- SKU-004
+- SKU-007
+
+SKU-001
+-------
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Observed state:
+warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+warehouse-b: on_hand 100, reserved 8, available 92, version 41, cursor 1041
+warehouse-c: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+
+Evidence:
+- warehouse-a and warehouse-c agreed on inventory, revision 42, cursor 1042,
+  and latest event.
+- warehouse-b was behind in version and event progress.
+
+Decision:
+RECONCILE
+
+Canonical source:
+warehouse-a
+
+Target:
+warehouse-b
+
+Write:
+warehouse-b version 41 -> 42
+inventory -> 120 / 8 / 112
+
+Execution:
+SUCCESS
+
+Verification:
+warehouse-a: v42 / on_hand 120
+warehouse-b: v42 / on_hand 120
+warehouse-c: v42 / on_hand 120
+
+Final result:
+RESOLVED
+
+
+SKU-004
+-------
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Observed state:
+warehouse-a: on_hand 60, reserved 5, available 55, version 50, cursor 2050
+warehouse-b: on_hand 60, reserved 5, available 55, version 50, cursor 2050
+warehouse-c: on_hand 52, reserved 5, available 47, version 51, cursor 2051
+
+Initial evidence:
+- warehouse-c was ahead in version and event progress.
+
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-c /inventory/SKU-004/events
+
+New evidence:
+Events after evt-2050 derived on_hand 52 and explained the newer state.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-c
+
+Targets:
+- warehouse-a
+- warehouse-b
+
+Writes:
+warehouse-a version 50 -> 51, inventory -> 52 / 5 / 47
+warehouse-b version 50 -> 51, inventory -> 52 / 5 / 47
+
+Execution:
+Both writes SUCCESS
+
+Verification:
+warehouse-a: v51 / on_hand 52
+warehouse-b: v51 / on_hand 52
+warehouse-c: v51 / on_hand 52
+
+Final result:
+RESOLVED
+
+
+SKU-007
+-------
+Conflict type:
+- inventory_mismatch
+
+Observed state:
+warehouse-a: on_hand 40, reserved 3, available 37, version 60, cursor 3060
+warehouse-b: on_hand 40, reserved 3, available 37, version 60, cursor 3060
+warehouse-c: on_hand 35, reserved 3, available 32, version 60, cursor 3060
+
+Initial evidence:
+Materialised inventory differed despite identical version and event progress.
+
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-a /inventory/SKU-007/events
+GET warehouse-b /inventory/SKU-007/events
+GET warehouse-c /inventory/SKU-007/events
+
+New evidence:
+- complete event replay derived on_hand 40 for all three histories;
+- warehouse-a observed 40;
+- warehouse-b observed 40;
+- warehouse-c observed 35;
+- all investigated warehouses reported the same causal history.
+
+Reassessed decision:
+RECONCILE
+
+Canonical source:
+warehouse-a
+
+Repair strategy:
+Shared repair revision 61
+
+Writes:
+warehouse-a version 60 -> 61, inventory -> 40 / 3 / 37
+warehouse-b version 60 -> 61, inventory -> 40 / 3 / 37
+warehouse-c version 60 -> 61, inventory -> 40 / 3 / 37
+
+Execution:
+All three writes SUCCESS
+
+Verification:
+warehouse-a: v61 / on_hand 40
+warehouse-b: v61 / on_hand 40
+warehouse-c: v61 / on_hand 40
+
+Final result:
+RESOLVED
+
+
+Mixed-conflicts first-run cost
+------------------------------
+API calls: 22
+Successful: 22
+Failed: 0
+GET: 16
+PUT: 6
+Catalogue observation calls: 3
+Event investigation calls: 4
+Reconciliation writes: 6
+Verification reads: 9
+Request bytes: 1784
+Response bytes: 36369
+Total bytes transferred: 38153
+Total API latency: 110.60 ms
+Wall-clock time: 123.80 ms
+
+Second run
+----------
+Products discovered: 10
+Consistent: 10
+Conflicts: 0
+
+No conflicts. No reconciliation required.
+
+API calls: 3
+Successful: 3
+Failed: 0
+GET: 3
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 25141
+Total bytes transferred: 25141
+Total API latency: 52.42 ms
+Wall-clock time: 70.78 ms
+
+TEST RESULT: PASS
+
+
+2. INCOMPLETE EVENT HISTORY
+===========================
+
+Initial analysis
+----------------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-001
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Observed state:
+warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+warehouse-b: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+warehouse-c: on_hand 105, reserved 8, available 97, version 43, cursor 1043
+
+Initial evidence:
+- warehouse-c was ahead in version and event progress.
+
+Initial decision:
+INVESTIGATE
+
+Investigation:
+GET warehouse-c /inventory/SKU-001/events
+
+New evidence:
+- event history had no explicit opening-stock anchor, so absolute on_hand could
+  not be replayed;
+- history could not extend the reference warehouse event tip.
+
+Reassessed decision:
+ESCALATE
+
+Reason:
+The gathered history was incomplete or could not explain the observed state.
+No mutation was attempted.
+
+Final result:
+ESCALATED
+
+First-run cost
+--------------
+API calls: 4
+Successful: 4
+Failed: 0
+GET: 4
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 1
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 24725
+Total bytes transferred: 24725
+Total API latency: 101.37 ms
+Wall-clock time: 126.47 ms
+
+Second run
+----------
+The same unresolved conflict was observed again.
+
+Decision path:
+INVESTIGATE -> ESCALATE
+
+PUT: 0
+
+API calls: 4
+Successful: 4
+Failed: 0
+GET: 4
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 1
+Reconciliation writes: 0
+Verification reads: 0
+Response bytes: 24725
+Total API latency: 32.59 ms
+Wall-clock time: 90.65 ms
+
+TEST RESULT: PASS
+
+
+3. COMPETING NEWER STATES
+=========================
+
+Initial analysis
+----------------
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-001
+
+Conflict types:
+- inventory_mismatch
+- version_mismatch
+- event_progress_mismatch
+
+Observed state:
+warehouse-a: on_hand 120, reserved 8, available 112, version 42, cursor 1042
+warehouse-b: on_hand 110, reserved 8, available 102, version 43, cursor 1043
+warehouse-c: on_hand 130, reserved 8, available 122, version 43, cursor 1043
+
+Initial evidence:
+- warehouse-b was ahead of the reference version and cursor;
+- warehouse-c was ahead of the reference version and cursor.
+
+Initial decision:
+INVESTIGATE
+
+Reason:
+Multiple newer states required causal investigation before a safe canonical
+state could be selected.
+
+Investigation:
+GET warehouse-b /inventory/SKU-001/events
+GET warehouse-c /inventory/SKU-001/events
+
+New evidence:
+Multiple valid event branches extended evt-1042 to different supported states.
+
+Reassessed decision:
+ESCALATE
+
+Reason:
+Automatic reconciliation was unsafe because the causal histories were
+contradictory. No mutation was attempted.
+
+Final result:
+ESCALATED
+
+First-run cost
+--------------
+API calls: 5
+Successful: 5
+Failed: 0
+GET: 5
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 2
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 25681
+Total bytes transferred: 25681
+Total API latency: 42.36 ms
+Wall-clock time: 66.74 ms
+
+Second run
+----------
+The same unresolved split-brain conflict was observed again.
+
+Decision path:
+INVESTIGATE -> ESCALATE
+
+PUT: 0
+
+API calls: 5
+Successful: 5
+Failed: 0
+GET: 5
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 2
+Reconciliation writes: 0
+Verification reads: 0
+Response bytes: 25681
+Total API latency: 39.95 ms
+Wall-clock time: 68.81 ms
+
+TEST RESULT: PASS
+
+
+4. MISSING SKU
+==============
+
+Initial analysis
+----------------
+warehouse-a products: 10
+warehouse-b products: 10
+warehouse-c products: 9
+
+Products discovered: 10
+Consistent: 9
+Conflicts: 1
+
+Conflict:
+SKU-005
+
+Conflict type:
+- missing_sku
+
+Observed state:
+warehouse-a: on_hand 75, reserved 5, available 70, version 30, cursor 5030
+warehouse-b: on_hand 75, reserved 5, available 70, version 30, cursor 5030
+warehouse-c: SKU-005 absent
+
+Evidence:
+At least one warehouse had no record for SKU-005.
+
+Decision:
+ESCALATE
+
+Reason:
+Automatic reconciliation was unsafe because distributed product coverage was
+incomplete. No mutation was attempted.
+
+Final result:
+ESCALATED
+
+First-run cost
+--------------
+API calls: 3
+Successful: 3
+Failed: 0
+GET: 3
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+Request bytes: 0
+Response bytes: 23712
+Total bytes transferred: 23712
+Total API latency: 33.72 ms
+Wall-clock time: 66.02 ms
+
+Second run
+----------
+The same missing-SKU conflict remained.
+
+Decision:
+ESCALATE
+
+PUT: 0
+
+API calls: 3
+Successful: 3
+Failed: 0
+GET: 3
+PUT: 0
+Catalogue observation calls: 3
+Event investigation calls: 0
+Reconciliation writes: 0
+Verification reads: 0
+Response bytes: 23712
+Total API latency: 35.81 ms
+Wall-clock time: 65.32 ms
+
+TEST RESULT: PASS
+
+
+OVERALL ADDITIONAL V3 RESULTS
+=============================
+
+Scenario                    Conflicts   Investigation   PUTs   Final outcome
+--------------------------  ----------  --------------  -----  -------------
+mixed-conflicts             3           4 calls         6      RESOLVED x3
+incomplete-event-history    1           1 call          0      ESCALATED
+competing-newer-states      1           2 calls         0      ESCALATED
+missing-sku                 1           0 calls         0      ESCALATED
+
+
+Key behaviours confirmed
+------------------------
+PASS — one run can manage three independent conflicts with different strategies.
+
+PASS — direct reconciliation, targeted newer-state investigation, and
+same-version repair can coexist in one run.
+
+PASS — mixed-conflict reconciliation converges; the second run required only
+three catalogue reads and zero PUTs.
+
+PASS — incomplete causal evidence results in safe escalation and zero writes.
+
+PASS — two individually valid but contradictory newer branches result in safe
+escalation and zero writes.
+
+PASS — a genuinely missing product record is treated as missing state, not zero
+inventory, and results in safe escalation without investigation or mutation.
+
+PASS — unresolved unsafe conditions remain unresolved on a second run rather
+than being silently or repeatedly mutated.
+
+
+FINAL RESULT
+============
+
+PASS
+
+All four additional V3 scenarios behaved as intended against the Docker warehouse
+APIs. Together with the earlier V3 manual results, the deterministic suite now
+demonstrates successful reconciliation, selective investigation, shared repair
+revisions, multi-conflict orchestration, and safe escalation for incomplete,
+contradictory, or missing evidence.
