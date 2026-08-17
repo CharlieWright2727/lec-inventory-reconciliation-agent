@@ -1,216 +1,481 @@
 # Inventory Reconciliation Agent
 
-This repository contains my submission for the LEC AI Engineering Intern build assessment.
+I built this project for the LEC AI Engineering Intern assessment.
 
-## Task
+It compares inventory from three warehouse APIs, finds stock that does not
+match, works out which state is supported by the available evidence, and either
+fixes the warehouses or safely escalates the conflict. After a fix, it reads the
+warehouses again to check that they really agree.
 
-Build an agent that synchronises product inventory across three or more independent warehouse systems.
+The project includes:
 
-The agent will:
+- 3 independent warehouse APIs;
+- 7 fixed test scenarios;
+- a live simulation with 5 changing disturbances;
+- V1, V2 and V3 versions of the agent;
+- real API-call, byte and timing measurements.
 
-- query multiple warehouse inventory sources;
-- detect inconsistencies between their stock records;
-- decide how those inconsistencies should be reconciled;
-- create and execute a sequence of reconciliation actions;
-- update affected warehouse systems;
-- measure and report the cost of the synchronisation process, including metrics such as API calls, latency and data transferred.
+The agent is deterministic. It does not use an LLM to make reconciliation
+decisions, so the same input always produces the same decision and the reason
+can be shown clearly.
+
+## What it does
+
+For each run, the agent:
+
+1. Reads the catalogue from every warehouse.
+2. Finds products where stock, version, event progress, identity or coverage
+   does not match.
+3. Builds evidence from what it observed.
+4. Reads event history only when the catalogue is not enough to make a safe
+   decision.
+5. Chooses to reconcile or escalate each conflict.
+6. Builds and checks a version-aware update plan.
+7. Sends safe updates one at a time.
+8. Reads every warehouse again to check that the update worked.
+9. Prints the result and the measured cost of the run.
+
+The command-line entry point runs V3, which is the complete version.
+
+## Architecture
+
+```text
+Warehouse A ─┐
+Warehouse B ─┼──> OBSERVE ──> DETECT ──> EVIDENCE
+Warehouse C ─┘                              │
+                                           ├── not enough ──> INVESTIGATE ─┐
+                                           │                              │
+                                           └── enough ────────────────────┤
+                                                                          v
+                                                            RECONCILE / ESCALATE
+                                                                     │
+                                                             if reconcile
+                                                                     v
+                                                      SAFETY ──> EXECUTE ──> VERIFY
+                                                                     │
+                                                                     v
+                                                                COST REPORT
+```
+
+The warehouses all use the same FastAPI code, but Docker starts them as three
+separate processes with separate in-memory stores. The agent can only see their
+HTTP APIs. It does not read scenario files or simulation state.
+
+Most of the decision logic is kept separate from network code:
+
+```text
+agent/client.py     HTTP calls and call measurements
+agent/detector.py   factual differences between warehouses
+agent/evidence.py   agreement, progress and event-history evidence
+agent/policy.py     reconcile, investigate or escalate decision
+agent/planner.py    explicit read and write plans
+agent/safety.py     checks the whole SKU plan before writing
+agent/executor.py   performs validated writes
+agent/verifier.py   reads the warehouses again after writing
+agent/runner.py     joins the stages together
+```
 
 ## Reconciliation strategy
 
-The project simulates independent inventory systems through local APIs. The
-agent observes their catalogues, detects factual conflicts, interprets typed
-evidence, selectively investigates causal event history, plans and safety-checks
-writes, executes with optimistic concurrency, and independently verifies the
-result.
+I did not use simple majority voting because two matching warehouses can both
+be behind a newer warehouse. I also avoided averaging stock, because that could
+create a number that never existed, and I did not use timestamps alone because
+clocks can be wrong or out of sync.
 
-The strategy deliberately avoids blind majority voting: two matching replicas
-can both be behind a legitimate newer minority. It also avoids latest timestamp
-only, averaging stock values, and fixed source priority because none proves how
-a state arose. Instead it uses consensus plus logical progress for obvious stale
-replicas, causal event evidence for ambiguous conflicts, forward repair revisions
-instead of rewriting historical versions, mandatory post-write verification,
-and escalation rather than guessing.
+The agent instead uses these rules:
 
-## Current status
+- If two warehouses fully agree and the third is behind in both version and
+  event progress, the third warehouse can be moved forward directly.
+- If one warehouse is newer, it is not overwritten just because it is in the
+  minority. The agent reads its event history and checks whether later events
+  explain its stock.
+- If stock differs at the same version, the agent replays the event histories.
+  If one value is supported, all warehouses move to a new shared repair version.
+  The old version is never silently given a different meaning.
+- If a product is missing, identity does not match, history is incomplete, or
+  two valid event branches disagree, the agent escalates without guessing.
 
-Implemented:
+This means some difficult conflicts are deliberately left for a person to
+review. That is safer than writing a stock number that the evidence cannot
+support. Event history is only requested when it can change the decision, which
+keeps simple runs cheaper.
 
-- three independent simulated warehouse APIs;
-- one reusable FastAPI implementation with multi-product catalogues;
-- catalogue, targeted SKU, and SKU-specific event-history reads;
-- validated, version-aware inventory updates with optimistic concurrency;
-- a Docker Compose runtime for `warehouse-a`, `warehouse-b`, and `warehouse-c`;
-- deterministic scenario loading for seven warehouse conflict scenarios;
-- a read-only V1 agent that observes warehouse catalogues concurrently;
-- structured run, observation, product, conflict, and API-cost models;
-- factual cross-warehouse conflict detection and a command-line run summary;
-- a read-only V2 evidence, policy, and selective investigation loop;
-- deterministic stale-replica, newer-minority, and same-progress decisions;
-- dynamically planned, instrumented SKU event-history investigation;
-- typed V3 reconciliation plans and whole-plan safety validation;
-- sequential optimistic-concurrency writes with partial-failure audit trails;
-- shared forward repair revisions for same-version divergence;
-- independent targeted verification using the original conflict detector;
-- explicit per-SKU `RESOLVED`, `NO_ACTION`, or `ESCALATED` outcomes;
-- request-purpose, latency, exact PUT-byte, response-byte, and transfer metrics;
-- focused warehouse API tests.
+## Quick start
 
-V3 completes the core reconciliation lifecycle. V2 remains available as a
-read-only dry-run API.
-
-The three warehouse containers share one implementation and image while using separate identities and independent in-memory state.
-
-With the warehouses running, execute V3 with:
+You need Python 3.11 or newer, Docker and Docker Compose.
 
 ```bash
-.venv/bin/python -m agent.runner
+git clone https://github.com/CharlieWright2727/lec-inventory-reconciliation-agent.git
+cd lec-inventory-reconciliation-agent
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-## Deterministic scenarios
-
-| Scenario | Core behaviour |
-| --- | --- |
-| `one-stale-warehouse` | Direct stale reconciliation |
-| `newer-singleton` | Investigate a newer minority |
-| `same-version-divergence` | Causal replay and a shared repair revision |
-| `mixed-conflicts` | Multiple evidence strategies in one run |
-| `incomplete-event-history` | Safe escalation when causality is incomplete |
-| `competing-newer-states` | Contradictory causal branches trigger escalation |
-| `missing-sku` | Incomplete product coverage triggers escalation |
-
-`one-stale-warehouse` is the default Docker Compose scenario. Warehouse A and C
-agree on revision 42 while Warehouse B remains on revision 41.
-
-`newer-singleton` presents a different safety case: Warehouse A and B agree on
-revision 42 while the healthy, internally valid Warehouse C reports revision 43.
-This tests whether the future decision layer avoids blindly applying majority
-consensus when the minority may contain newer legitimate data.
-
-Start `newer-singleton` with:
+Run all automated tests:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.newer-singleton.yaml \
-  up --build
+pytest
 ```
 
-V3 initially classifies this pattern as `INVESTIGATE`, selectively queries only
-Warehouse C's `SKU-001` event history, writes A and B forward when the additional
-event explains C's state, and verifies all three warehouses.
-
-`same-version-divergence` gives all three warehouses version 42, event cursor
-1042, and the same event history, but Warehouse C contains a different
-materialised inventory value. Recency and latest-version comparison therefore
-cannot identify the supported state. Majority agreement is useful evidence, but
-event history provides the stronger causal explanation: the shared events imply
-120 units, while C reports 115 without an event explaining the difference.
-
-Start `same-version-divergence` with:
+Start the default warehouse scenario:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.same-version-divergence.yaml \
-  up --build
+docker compose up --build -d
 ```
 
-V3 investigates event history only for the conflicting SKU. Shared complete
-history derives 120 units and identifies Warehouse C's materialised value as
-unsupported. It then advances A, B, and C to one repair revision and verifies the
-new shared state.
-
-`mixed-conflicts` contains three conflicting SKUs with three different patterns
-in one run. V3 directly repairs one stale replica, selectively investigates one
-newer singleton, and performs causal replay plus a shared repair revision for a
-same-version divergence. Each path is selected independently from runtime data.
-
-Start it with:
+Wait for the three APIs if needed:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.mixed-conflicts.yaml \
-  up --build
+until curl -fsS http://localhost:8001/health >/dev/null \
+  && curl -fsS http://localhost:8002/health >/dev/null \
+  && curl -fsS http://localhost:8003/health >/dev/null; do
+  sleep 1
+done
 ```
 
-`incomplete-event-history` presents an apparently newer warehouse whose exposed
-history omits the known causal anchor. V3 investigates, cannot establish a safe
-canonical state, performs no writes, and escalates rather than guessing.
-
-Start it with:
+Run the agent and then stop Docker:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.incomplete-event-history.yaml \
-  up --build
+python -m agent.runner
+docker compose down
 ```
 
-`competing-newer-states` gives Warehouse B and C two different, individually
-valid extensions of the same Warehouse A event tip. V3 investigates both
-branches, recognises that the complete causal evidence is contradictory, and
-escalates without choosing either branch or performing a write.
+## Running V3
 
-Start it with:
+The default scenario has Warehouse A and C at version 42 while Warehouse B is
+still at version 41. V3 should recognise that B is stale, update it, read all
+three warehouses again, and report:
+
+```text
+SKU-001: RESOLVED
+```
+
+Before stopping Docker, run the agent a second time:
 
 ```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.competing-newer-states.yaml \
-  up --build
+python -m agent.runner
 ```
 
-`missing-sku` removes `SKU-005` entirely from Warehouse C while A and B retain
-matching records. V3 reports `missing_sku` and escalates without inventing,
-deleting, investigating, or mutating product state.
+The second run should find all 10 products consistent and perform no PUT
+requests. This shows that the result is stable and the agent does not keep
+writing the same state.
 
-Start it with:
+The three programmatic entry points are:
 
-```bash
-docker compose \
-  -f compose.yaml \
-  -f compose.missing-sku.yaml \
-  up --build
-```
-
-The catalogue-only API remains `run_agent()`, V2 dry-run reasoning remains
-`run_agent_v2()`, and full reconciliation is `run_agent_v3()`. The CLI runs V3.
-See `md/agent/agent_v2.md` and `md/agent/agent_v3.md` for the complete design.
+- `run_agent()` — V1 observation and conflict detection;
+- `run_agent_v2()` — read-only evidence and decisions;
+- `run_agent_v3()` — planning, writing and verification.
 
 ## Live warehouse simulation
 
-The final simulation milestone runs the unchanged V3 agent against five live
-disturbances injected through guarded warehouse HTTP controls. Every disturbance
-runs exactly once in a seeded random order. V3 must resolve three safe cases and
-safely escalate two ambiguous causal cases with zero writes; the simulator then
-independently marks each round `PASS` or `FAIL` and gates the next round on a
-full clean-state check.
+The live simulation starts with clean warehouses and injects five different
+problems in a seeded random order. It uses the real V3 agent without giving the
+agent any information about which disturbance was injected.
 
-Start the clean simulation-enabled warehouse services:
+Each round must:
+
+1. start from a checked clean state;
+2. create exactly one intended conflict;
+3. produce the expected resolved or escalated result;
+4. perform no writes when escalation is expected;
+5. finish with a clean environment before the next round.
+
+Run it with:
 
 ```bash
 docker compose \
   -f compose.yaml \
   -f compose.simulation.yaml \
   up --build -d
-```
 
-Run the simulation and optionally reproduce it with a seed:
+python -m simulation.runner
+python -m simulation.runner --seed 81724
 
-```bash
-.venv/bin/python -m simulation.runner
-.venv/bin/python -m simulation.runner --seed 81724
-```
-
-Then stop the services:
-
-```bash
 docker compose \
   -f compose.yaml \
   -f compose.simulation.yaml \
   down
 ```
 
-See `simulation/README.md` for the disturbance model, round gating, reset rules,
-cost separation, and optional JSON report command.
+An optional JSON report can also be written:
+
+```bash
+python -m simulation.runner \
+  --seed 81724 \
+  --json-report simulation/results/demo-81724.json
+```
+
+More detail is in [simulation/README.md](simulation/README.md).
+
+## Deterministic scenarios
+
+There are seven fixed scenarios. These make it easy to reproduce the same
+starting state and inspect the exact decision made by V3.
+
+| Scenario | What it tests | Expected V3 result |
+| --- | --- | --- |
+| `one-stale-warehouse` | One replica is clearly behind | `RESOLVED` |
+| `newer-singleton` | A newer minority may be correct | `RESOLVED` |
+| `same-version-divergence` | Event replay is needed at the same version | `RESOLVED` |
+| `mixed-conflicts` | Three different conflict types in one run | Three `RESOLVED` |
+| `incomplete-event-history` | The causal link cannot be proved | `ESCALATED`, 0 writes |
+| `competing-newer-states` | Two valid newer branches disagree | `ESCALATED`, 0 writes |
+| `missing-sku` | Missing stock is unknown, not zero | `ESCALATED`, 0 writes |
+
+The default scenario uses `compose.yaml`. Other scenarios use a small Compose
+override. For example:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.newer-singleton.yaml \
+  up --build -d
+
+python -m agent.runner
+
+docker compose \
+  -f compose.yaml \
+  -f compose.newer-singleton.yaml \
+  down
+```
+
+## Testing and results
+
+Run the complete suite with:
+
+```bash
+pytest
+```
+
+The 121 tests cover the warehouse APIs, input validation, conflict detection,
+evidence extraction, policy decisions, investigation, planning, safety checks,
+concurrent changes, write failures, verification, all seven scenarios, and the
+complete live simulation.
+
+The automated tests were generated with the help of OpenAI Codex as part of
+each implementation stage. I did not treat generated tests as proof
+on their own. I reviewed them against the written requirements and scenario
+expectations, checked that they covered both successful and unsafe cases, and
+then compared them with manual API, Docker and end-to-end runs. The saved manual
+outputs below provide a separate record of the system actually running.
+
+| Check | Result |
+| --- | --- |
+| Automated tests | 121 PASS |
+| Deterministic scenarios | 7 covered |
+| Mixed-conflict Docker run | PASS |
+| Live simulation | 5 / 5 rounds PASS |
+| Automatically resolved live rounds | 3 |
+| Safely escalated live rounds | 2 |
+| Unexpected writes during escalation | 0 |
+| Verification failures | 0 |
+| Reset failures | 0 |
+
+The recorded manual runs are stored in [tests/manual](tests/manual). They include
+API checks, V1, V2, the V3 scenarios and the full seeded simulation.
+
+## Cost reporting
+
+Every warehouse request made by the agent is measured. The output shows:
+
+- the number of API calls;
+- successful and failed calls;
+- catalogue reads, event reads, writes and verification reads;
+- request-body and response-body bytes;
+- total API latency;
+- total wall-clock time.
+
+One recorded five-round simulation produced:
+
+```text
+Agent runs: 5
+API calls: 37
+Catalogue observations: 15
+Event investigations: 7
+Reconciliation writes: 6
+Verification reads: 9
+
+Request bytes: 1,875
+Response bytes: 136,747
+Total transferred: 138,622 bytes
+
+API latency: 129.04 ms
+Agent wall-clock time: 70.22 ms
+```
+
+These numbers are HTTP payload bytes rather than lower-level network overhead.
+The simulator's reset, disturbance and observation calls are measured
+separately, so they do not make the agent appear more expensive than it is. The
+full output is in
+[tests/manual/live_simulation_results.txt](tests/manual/live_simulation_results.txt).
+
+## Safety and failure behaviour
+
+- Every write says which version the agent originally observed. If that version
+  has changed, the warehouse rejects the write.
+- Versions cannot move backwards.
+- Different stock cannot be written while keeping the same version.
+- The full plan for a SKU is checked before its first write.
+- Writes happen one at a time and stop after the first failure.
+- There is no automatic rollback. A partial result is recorded and escalated.
+- A successful PUT is not enough. The agent independently reads every warehouse
+  again and checks the result.
+- Missing or contradictory evidence causes escalation instead of a guess.
+- `ESCALATED` means the agent finished safely. It does not mean the program
+  crashed.
+
+## How I built it
+
+I used two AI-assisted tools during development. My usual private planning
+workflow is built around Obsidian and a local Ollama model,
+`lfm2.5:latest`. I used it to organise project notes, explore early ideas and
+help shape the detailed implementation briefs. I then used OpenAI Codex as the
+agentic coding service for the bounded implementation stages, automated tests,
+repository reviews and command-line validation.
+
+This distinction is important: the local model helped with private planning and
+Codex helped implement and review the repository. Neither model is part of the
+running reconciliation agent. Runtime reconciliation is deterministic and does
+not send warehouse data to an LLM.
+
+I used a staged workflow rather than asking Codex to build the complete project
+from one large prompt.
+
+```text
+Understand the task
+        ↓
+Write schemas, rules and API notes
+        ↓
+Build a small hand-written warehouse demo
+        ↓
+Run it manually and record the output
+        ↓
+Write a detailed plan for the next agent version
+        ↓
+Use Codex to implement that bounded stage
+        ↓
+Review the diff, code paths, tests and Docker behaviour
+        ↓
+Fix or clarify anything found
+        ↓
+Commit only after the stage works end to end
+```
+
+### 1. Plan the data and rules first
+
+I started by writing down the warehouse record shape, API behaviour and update
+rules. This made the expected behaviour clear before the reconciliation agent
+existed.
+
+The main documents were:
+
+- [warehouse_schema.md](md/warehouse/warehouse_schema.md);
+- [warehouse_rules.md](md/warehouse/warehouse_rules.md);
+- [warehouse_api_queries.md](md/warehouse/warehouse_api_queries.md);
+- [warehouse_scenario_framework.md](md/warehouse/warehouse_scenario_framework.md).
+
+### 2. Use small hand-written demos
+
+I first built and ran small pieces manually: one warehouse API, then three
+services, then one known stale-warehouse conflict. I used direct API calls and
+short agent runs to check the data before adding more reasoning.
+
+The outputs were kept instead of discarded. They are now under
+[tests/manual](tests/manual), so the development steps and real Docker results
+can still be inspected.
+
+### 3. Build the agent in stages
+
+The agent was split into three versions:
+
+- V1 only observed the catalogues and reported facts.
+- V2 added evidence, selective investigation and read-only decisions.
+- V3 added safe update plans, execution and independent verification.
+
+Before each stage, I wrote a detailed Markdown implementation brief describing
+the boundaries, data models, expected behaviour, failure cases, costs and tests.
+Those documents gave Codex a smaller and more precise task instead
+of leaving it to invent the design.
+
+Codex also generated the automated tests for each stage from those briefs and
+acceptance criteria. I reviewed the tests alongside the implementation to make
+sure they checked required behaviour rather than simply matching the generated
+code.
+
+The stage documents are:
+
+- [agent_plan.md](md/agent/agent_plan.md);
+- [agent_v1.md](md/agent/agent_v1.md);
+- [agent_v2.md](md/agent/agent_v2.md);
+- [agent_v3.md](md/agent/agent_v3.md);
+- [cost_tracking_plan.md](md/agent/cost_tracking_plan.md).
+
+The large [warehouse_simulation_plan.md](md/warehouse/warehouse_simulation_plan.md)
+was used in the same way for the live simulation. It is kept as implementation
+history; it is not required to run the project.
+
+### 4. Review before committing
+
+After each implementation stage, I reviewed more than whether the happy path
+ran. The review included:
+
+- reading the generated diff and tracing the full runtime path;
+- checking that the agent did not contain scenario names or SKU-specific rules;
+- running the complete automated test suite;
+- running the relevant scenario through Docker;
+- checking failure and escalation paths as well as successful writes;
+- comparing the planned API calls with the measured cost output;
+- running the agent a second time to prove convergence and no repeated writes;
+- updating the plan or documentation when the implementation had changed.
+
+This review-and-test step happened before commits so each version represented a
+working stage rather than a large unverified code drop.
+
+## Limitations
+
+- The warehouses are local in-memory services rather than real warehouse
+  providers.
+- Event replay currently proves `on_hand`. Reservation changes do not yet have
+  the same detailed event meaning.
+- There is no distributed lock for multiple agent processes running at once.
+- A canonical source is not read again immediately before target writes. If it
+  changes during a run, verification catches the mismatch afterward, but partial
+  writes may need operator review.
+- Run evidence and cost records are not stored in an external durable audit
+  database.
+- Escalated conflicts require a person or another business process to decide
+  what should happen next.
+- The assessment uses three warehouses, although most agent functions accept a
+  collection of endpoints.
+
+## What I would do next with more time
+
+- Store decisions, evidence, writes, verification and cost in durable audit
+  storage.
+- Revalidate the canonical source immediately before executing a plan.
+- Add distributed coordination for multiple reconciliation workers.
+- Add richer events for reservations, allocations, returns and orders.
+- Connect to authenticated external warehouse APIs.
+- Add production dashboards and alerts for escalated conflicts.
+- Add an operator workflow for reviewing and resolving escalations.
+
+## Project structure
+
+```text
+agent/       V1, V2 and V3 reconciliation code
+warehouse/   FastAPI warehouse service and in-memory state
+scenarios/   seven fixed warehouse scenarios
+simulation/  seeded live disturbance runner and independent checks
+tests/       automated tests, support code and saved manual output
+md/          planning, implementation briefs and design notes
+```
+
+For more detail, the best places to continue are:
+
+- [V3 design](md/agent/agent_v3.md);
+- [live simulation guide](simulation/README.md);
+- [warehouse scenario framework](md/warehouse/warehouse_scenario_framework.md).

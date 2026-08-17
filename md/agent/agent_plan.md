@@ -1,5 +1,8 @@
 # Reconciliation Agent — General Plan
 
+> **Status:** Implementation-history reference. V1, V2, and V3 are complete;
+> current runtime behaviour is documented in `README.md` and `agent_v3.md`.
+
 ## Purpose
 
 The reconciliation agent is responsible for inspecting multiple independent warehouse systems, identifying inventory inconsistencies, deciding what information or actions are required, executing safe reconciliation steps, verifying the result, and producing an auditable explanation of what it did.
@@ -442,11 +445,11 @@ An escalation should include:
 
 ## AI / Machine Learning Position
 
-The planned version of the agent will not use an LLM or trained machine-learning model for core reconciliation decisions.
+The implemented agent does not use an LLM or trained machine-learning model for core reconciliation decisions.
 
 The warehouse data is structured and the reconciliation process needs to be deterministic, auditable, testable, explainable, and safe.
 
-The agent will therefore use deterministic evidence extraction, policy evaluation, planning, execution, and verification.
+The agent therefore uses deterministic evidence extraction, policy evaluation, planning, execution, and verification.
 
 The system is still agentic because it observes an unknown environment, determines which problems exist, chooses what evidence to gather, constructs actions at runtime, executes actions, observes their outcome, replans when necessary, and stops or escalates when appropriate.
 
@@ -456,7 +459,7 @@ An AI reasoning layer may be considered as future work for genuinely unstructure
 
 ## Cost Tracking
 
-The agent will eventually be responsible for measuring the operational cost of each reconciliation run.
+The implemented agent measures the operational cost of each reconciliation run.
 
 Metrics are expected to include:
 
@@ -473,7 +476,7 @@ wall-clock run time
 
 Cost instrumentation should sit around the HTTP client layer so all agent requests are measured consistently.
 
-Detailed cost-reporting design will be handled separately.
+The implemented cost model is documented in `cost_tracking_plan.md` and the root README.
 
 ---
 
@@ -504,19 +507,16 @@ client. A normal run performs catalogue reads only. If any configured warehouse
 cannot be observed, the run retains its request metrics, reports failure, and
 does not analyse an incomplete warehouse view.
 
-V1 does not interpret which warehouse is stale, query event-history endpoints,
+The V1 API does not interpret which warehouse is stale, query event-history endpoints,
 choose a canonical state, make reconciliation decisions, create plans, perform
-writes, or verify updates. Those capabilities remain future milestones.
+writes, or verify updates. V2 and V3 add those later lifecycle stages.
 
-Run V1 from the host after starting the warehouse services:
+The V1 path remains available programmatically as `run_agent()`. The current
+command-line entry point runs the complete V3 lifecycle.
 
-```bash
-python -m agent.runner
-```
+## Completed implementation order
 
-## Remaining Implementation Order
-
-The proposed development order is:
+The implementation followed this development order:
 
 ```text
 1. Define evidence and decision rules.

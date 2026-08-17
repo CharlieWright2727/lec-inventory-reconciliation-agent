@@ -298,7 +298,7 @@ at:
 tests/expectations/one-stale-warehouse.json
 ```
 
-This file is a test oracle only. The future reconciliation agent must never load
+This file is a test oracle only. The reconciliation agent must never load
 or rely on the expectation file. It only receives warehouse API URLs and
 observes warehouse state through HTTP.
 

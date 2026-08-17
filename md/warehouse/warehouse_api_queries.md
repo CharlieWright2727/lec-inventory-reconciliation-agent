@@ -279,7 +279,7 @@ No additional warehouse-management endpoints should be added unless they directl
 
 # Cost Reporting Scope
 
-Cost measurement covers a complete warehouse synchronisation run, not only one product. A future report may contain:
+Cost measurement covers a complete warehouse synchronisation run, not only one product. A report contains values such as:
 
 ```text
 Warehouses queried:      3

@@ -75,19 +75,19 @@ docker compose \
 Run with an automatically generated seed:
 
 ```bash
-.venv/bin/python -m simulation.runner
+python -m simulation.runner
 ```
 
 Reproduce an order with a printed seed:
 
 ```bash
-.venv/bin/python -m simulation.runner --seed 81724
+python -m simulation.runner --seed 81724
 ```
 
 Optionally write the typed result as JSON:
 
 ```bash
-.venv/bin/python -m simulation.runner \
+python -m simulation.runner \
   --seed 81724 \
   --json-report simulation/results/demo-81724.json
 ```

@@ -1,5 +1,8 @@
 # Version 1 Agent Write-Up
 
+> **Status:** Historical version-specific write-up. V2 and V3 now implement the
+> later evidence, decision, execution, and verification stages.
+
 ## Overview
 
 Version 1 is the first functional implementation of the inventory reconciliation
@@ -308,12 +311,11 @@ V1 does not implement:
 
 These are intentional boundaries rather than missing V1 requirements.
 
-## Next Steps
+## Subsequent milestone (now implemented)
 
-The next milestone should introduce evidence investigation while initially
-remaining read-only.
+V2 subsequently introduced evidence investigation while remaining read-only.
 
-For each detected conflict, the agent should be able to decide whether the
+For each detected conflict, V2 can decide whether the
 catalogue contains enough information or whether additional evidence is required.
 
 For `SKU-001`, it could request:

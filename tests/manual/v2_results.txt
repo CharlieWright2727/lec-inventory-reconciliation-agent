@@ -1,6 +1,12 @@
 INVENTORY RECONCILIATION AGENT — V2 MANUAL TESTS
 =================================================
 
+Historical note
+---------------
+These results were captured during the V2 milestone, when the command-line
+entry point ran V2. The current CLI runs V3; the read-only V2 path remains
+available programmatically as `run_agent_v2()`.
+
 Purpose
 -------
 Validate the V2 agent across all three deterministic scenarios.
@@ -344,6 +350,8 @@ Key V2 behaviours confirmed
 - All V2 runs remain read-only.
 - PUT count remains zero in every scenario.
 
-Next stage
-----------
-V3 should turn the final RECONCILE decisions into safe, explicit write plans, execute warehouse updates, verify the resulting state, and perform a final consistency check.
+Subsequent V3 stage
+-------------------
+V3 subsequently turned the final RECONCILE decisions into safe, explicit write
+plans, executed warehouse updates, verified the resulting state, and performed
+a final consistency check.

@@ -1,5 +1,9 @@
 # Live Warehouse Simulation — Implementation Plan
 
+> **Status:** Implemented. This document is retained as the design and
+> implementation-history reference; operational instructions are in
+> `README.md` and `simulation/README.md`.
+
 ## 1. Purpose
 
 The deterministic scenario suite proves that the reconciliation agent behaves correctly for known isolated conditions.
